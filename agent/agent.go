@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/microsoft/agent-framework-go/agent/agentopt"
 	"github.com/microsoft/agent-framework-go/format"
 	"github.com/microsoft/agent-framework-go/memory"
 	"github.com/microsoft/agent-framework-go/message"
@@ -64,11 +65,11 @@ type Agent interface {
 }
 
 type Runner interface {
-	Run(ctx context.Context, options ...Option) iter.Seq2[*RunResponseUpdate, error]
+	Run(ctx context.Context, options ...agentopt.Option) iter.Seq2[*RunResponseUpdate, error]
 }
 
 type Middleware interface {
-	Run(ctx context.Context, next Runner, options ...Option) iter.Seq2[*RunResponseUpdate, error]
+	Run(ctx context.Context, next Runner, options ...agentopt.Option) iter.Seq2[*RunResponseUpdate, error]
 }
 
 func NewMessagesFromUpdates(updates []*RunResponseUpdate) []*message.Message {
@@ -147,16 +148,7 @@ func processUpdate(r *RunResponse, update *RunResponseUpdate) {
 		msg.CreatedAt = update.CreatedAt
 	}
 	for _, content := range update.Contents {
-		switch c := content.(type) {
-		case *message.UsageContent:
-			// Usage content is treated specially and propagated to the response's Usage.
-			if r.Usage == nil {
-				r.Usage = new(message.UsageDetails)
-			}
-			r.Usage.Add(c.Details)
-		default:
-			msg.Contents = append(msg.Contents, content)
-		}
+		msg.Contents = append(msg.Contents, content)
 	}
 	// Other members on a ChatResponseUpdate map to members of the ChatResponse.
 	// Update the response object with those, preferring the values from later updates.
@@ -198,7 +190,6 @@ type RunResponse struct {
 	AgentID              string
 	ContinuationToken    any
 	CreatedAt            time.Time
-	Usage                *message.UsageDetails
 	Messages             []*message.Message
 }
 
@@ -213,6 +204,14 @@ func (r *RunResponse) String() string {
 		}
 	}
 	return sb.String()
+}
+
+func (r *RunResponse) Usage() message.UsageDetails {
+	var usage message.UsageDetails
+	for _, msg := range r.Messages {
+		usage.Add(msg.Usage())
+	}
+	return usage
 }
 
 func (r *RunResponse) UserInputRequests() iter.Seq[message.Content] {
