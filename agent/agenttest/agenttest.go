@@ -8,8 +8,8 @@ import (
 
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/agent/agentopt"
+	"github.com/microsoft/agent-framework-go/agent/memory"
 	"github.com/microsoft/agent-framework-go/agent/middleware"
-	"github.com/microsoft/agent-framework-go/memory"
 	"github.com/microsoft/agent-framework-go/message"
 )
 
@@ -90,7 +90,7 @@ var _ agent.Agent = (*Agent)(nil)
 
 type Agent struct {
 	Iden          agent.Identity
-	NewThreadFunc func(context.Context, ...agentopt.NewThreadOption) memory.Thread
+	NewThreadFunc func(context.Context, ...agentopt.NewThreadOption) (memory.Thread, error)
 	Responses     []Turn
 
 	currentTurn int
@@ -121,11 +121,11 @@ func (a *Agent) Run(ctx context.Context, messages []*message.Message, opts ...ag
 	}
 }
 
-func (a *Agent) NewThread(ctx context.Context, opts ...agentopt.NewThreadOption) memory.Thread {
+func (a *Agent) NewThread(ctx context.Context, opts ...agentopt.NewThreadOption) (memory.Thread, error) {
 	if a.NewThreadFunc != nil {
 		return a.NewThreadFunc(ctx, opts...)
 	}
-	return &Thread{}
+	return &Thread{}, nil
 }
 
 func (a *Agent) UnmarshalThread(data []byte) (memory.Thread, error) {
