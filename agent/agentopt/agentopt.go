@@ -35,9 +35,18 @@ type CreateSessionOption interface {
 	CreateSessionOption()
 }
 
+type serviceIDOpt struct{ string }
+
+func (serviceIDOpt) CreateSessionOption() {}
+func (o serviceIDOpt) Value() any         { return o.string }
+
+func ServiceID(id string) CreateSessionOption {
+	return serviceIDOpt{id}
+}
+
 type (
 	responseFormatOpt    struct{ format.Format }
-	sessionOpt           struct{ memory.Session }
+	sessionOpt           struct{ *memory.Session }
 	continuationTokenOpt string
 
 	toolOpt struct{ tool.Tool }
@@ -92,7 +101,7 @@ func ResponseFormat(format format.Format) RunOption {
 }
 
 // Session sets the session to use during the agent run.
-func Session(session memory.Session) RunOption {
+func Session(session *memory.Session) RunOption {
 	return sessionOpt{session}
 }
 
@@ -144,7 +153,7 @@ func Get[T any, O Option](opts []O, setter func(T) O) (T, bool) {
 }
 
 // All returns a sequence of all values stored in opts with the provided setter.
-func All[T any](opts []RunOption, setter func(T) RunOption) iter.Seq[T] {
+func All[T any, O Option](opts []O, setter func(T) O) iter.Seq[T] {
 	return func(yield func(T) bool) {
 		var zero T
 		var setterType = reflect.TypeOf(setter(zero))
@@ -162,7 +171,7 @@ func All[T any](opts []RunOption, setter func(T) RunOption) iter.Seq[T] {
 	}
 }
 
-func AllBackward[T any](opts []RunOption, setter func(T) RunOption) iter.Seq[T] {
+func AllBackward[T any, O Option](opts []O, setter func(T) O) iter.Seq[T] {
 	return func(yield func(T) bool) {
 		var zero T
 		var setterType = reflect.TypeOf(setter(zero))

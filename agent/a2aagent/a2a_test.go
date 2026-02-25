@@ -13,7 +13,7 @@ import (
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/agent/a2aagent"
 	"github.com/microsoft/agent-framework-go/agent/agentopt"
-	"github.com/microsoft/agent-framework-go/agent/agenttest"
+	"github.com/microsoft/agent-framework-go/agent/memory"
 	"github.com/microsoft/agent-framework-go/message"
 )
 
@@ -143,6 +143,14 @@ func newTestAgent(transport a2aclient.Transport, opts a2aagent.Options) *agent.A
 	return a2aagent.NewAgent(client, opts)
 }
 
+func latestTaskID(session *memory.Session) string {
+	taskIDs := a2aagent.TaskIDsFromSession(session)
+	if len(taskIDs) == 0 {
+		return ""
+	}
+	return taskIDs[len(taskIDs)-1]
+}
+
 // TestConstructorWithNilClient tests that nil client is handled
 func TestConstructorWithNilClient(t *testing.T) {
 	defer func() {
@@ -259,12 +267,8 @@ func TestRunWithCreateSession(t *testing.T) {
 		t.Fatalf("error = %v, want nil", err)
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
-	}
-	if a2aSession.ContextID != "new-context-id" {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, "new-context-id")
+	if got := session.ServiceID; got != "new-context-id" {
+		t.Errorf("session.ServiceID = %q, want %q", got, "new-context-id")
 	}
 }
 
@@ -273,7 +277,7 @@ func TestRunWithExistingSession(t *testing.T) {
 	transport := &mockA2ATransport{}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context(), a2aagent.WithContextID("existing-context-id"))
+	session, err := a.CreateSession(t.Context(), agentopt.ServiceID("existing-context-id"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +308,7 @@ func TestRunWithSessionHavingDifferentContextID(t *testing.T) {
 	}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context(), a2aagent.WithContextID("existing-context-id"))
+	session, err := a.CreateSession(t.Context(), agentopt.ServiceID("existing-context-id"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,12 +419,8 @@ func TestRunStreamingWithSession(t *testing.T) {
 		}
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
-	}
-	if a2aSession.ContextID != "new-stream-context" {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, "new-stream-context")
+	if got := session.ServiceID; got != "new-stream-context" {
+		t.Errorf("session.ContextID = %q, want %q", got, "new-stream-context")
 	}
 }
 
@@ -431,7 +431,7 @@ func TestRunStreamingWithExistingSession(t *testing.T) {
 	}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context(), a2aagent.WithContextID("existing-context-id"))
+	session, err := a.CreateSession(t.Context(), agentopt.ServiceID("existing-context-id"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestRunStreamingWithSessionHavingDifferentContextID(t *testing.T) {
 	}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context(), a2aagent.WithContextID("existing-context-id"))
+	session, err := a.CreateSession(t.Context(), agentopt.ServiceID("existing-context-id"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,49 +556,6 @@ func TestRunWithHostedFileContent(t *testing.T) {
 	}
 }
 
-// TestRunWithInvalidSessionType tests error when using invalid session type
-func TestRunWithInvalidSessionType(t *testing.T) {
-	transport := &mockA2ATransport{}
-	a := newTestAgent(transport, a2aagent.Options{})
-
-	// Create a custom session type that is not an a2aagent.Session
-	invalidSession := agenttest.CreateSession()
-
-	_, err := a.RunText("Test message", agentopt.Session(invalidSession)).Collect(t.Context())
-	if err == nil {
-		t.Error("error = nil, want error for invalid session type")
-	}
-}
-
-// TestRunStreamingWithInvalidSessionType tests error when using invalid session type in streaming
-func TestRunStreamingWithInvalidSessionType(t *testing.T) {
-	transport := &mockA2ATransport{
-		streamingResponseToReturn: &a2a.Message{
-			ID:   "stream-1",
-			Role: a2a.MessageRoleAgent,
-			Parts: []a2a.Part{
-				a2a.TextPart{Text: "Response"},
-			},
-		},
-	}
-	a := newTestAgent(transport, a2aagent.Options{})
-
-	// Create a custom session type that is not an a2aagent.Session
-	invalidSession := agenttest.CreateSession()
-
-	gotError := false
-	for _, err := range a.RunText("Test message", agentopt.Session(invalidSession)).All(t.Context()) {
-		if err != nil {
-			gotError = true
-			break
-		}
-	}
-
-	if !gotError {
-		t.Error("expected error for invalid session type, got nil")
-	}
-}
-
 // TestRunWithContinuationTokenAndMessages tests error when both continuation token and messages are provided
 func TestRunWithContinuationTokenAndMessages(t *testing.T) {
 	transport := &mockA2ATransport{}
@@ -639,11 +596,10 @@ func TestRunWithTaskInSessionAndMessage(t *testing.T) {
 	}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context())
+	session, err := a.CreateSession(t.Context(), a2aagent.TaskID("task-123"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	session.(*a2aagent.Session).TaskID = "task-123"
 
 	_, err = a.RunText("Please make the background transparent", agentopt.Session(session)).Collect(t.Context())
 	if err != nil {
@@ -658,6 +614,43 @@ func TestRunWithTaskInSessionAndMessage(t *testing.T) {
 		t.Error("message.ReferenceTasks is empty, expected task-123")
 	} else if string(capturedMsg.ReferenceTasks[0]) != "task-123" {
 		t.Errorf("message.ReferenceTasks[0] = %q, want %q", capturedMsg.ReferenceTasks[0], "task-123")
+	}
+}
+
+func TestRunWithMultipleTaskIDsInSessionAndMessage(t *testing.T) {
+	transport := &mockA2ATransport{
+		responseToReturn: &a2a.Message{
+			ID:   "response-123",
+			Role: a2a.MessageRoleAgent,
+			Parts: []a2a.Part{
+				a2a.TextPart{Text: "Response to tasks"},
+			},
+		},
+	}
+	a := newTestAgent(transport, a2aagent.Options{})
+
+	session, err := a.CreateSession(t.Context(), a2aagent.TaskID("task-123"), a2aagent.TaskID("task-456"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = a.RunText("Please make the background transparent", agentopt.Session(session)).Collect(t.Context())
+	if err != nil {
+		t.Fatalf("error = %v, want nil", err)
+	}
+
+	capturedMsg := transport.capturedMessageSendParams.Message
+	if capturedMsg == nil {
+		t.Fatal("capturedMessageSendParams.Message is nil")
+	}
+	if len(capturedMsg.ReferenceTasks) != 2 {
+		t.Fatalf("len(message.ReferenceTasks) = %d, want 2", len(capturedMsg.ReferenceTasks))
+	}
+	if string(capturedMsg.ReferenceTasks[0]) != "task-123" {
+		t.Errorf("message.ReferenceTasks[0] = %q, want %q", capturedMsg.ReferenceTasks[0], "task-123")
+	}
+	if string(capturedMsg.ReferenceTasks[1]) != "task-456" {
+		t.Errorf("message.ReferenceTasks[1] = %q, want %q", capturedMsg.ReferenceTasks[1], "task-456")
 	}
 }
 
@@ -684,12 +677,8 @@ func TestRunWithAgentTask(t *testing.T) {
 		t.Fatalf("error = %v, want nil", err)
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
-	}
-	if a2aSession.TaskID != "task-456" {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, "task-456")
+	if got := latestTaskID(session); got != "task-456" {
+		t.Errorf("session.TaskID = %q, want %q", got, "task-456")
 	}
 }
 
@@ -739,15 +728,11 @@ func TestRunWithAgentTaskResponse(t *testing.T) {
 		t.Errorf("continuation token = %q, want %q", result.ContinuationToken, "task-789")
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
+	if got := session.ServiceID; got != "context-456" {
+		t.Errorf("session.ContextID = %q, want %q", got, "context-456")
 	}
-	if a2aSession.ContextID != "context-456" {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, "context-456")
-	}
-	if a2aSession.TaskID != "task-789" {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, "task-789")
+	if got := latestTaskID(session); got != "task-789" {
+		t.Errorf("session.TaskID = %q, want %q", got, "task-789")
 	}
 }
 
@@ -829,11 +814,10 @@ func TestRunStreamingWithTaskInSessionAndMessage(t *testing.T) {
 	}
 	a := newTestAgent(transport, a2aagent.Options{})
 
-	session, err := a.CreateSession(t.Context())
+	session, err := a.CreateSession(t.Context(), a2aagent.TaskID("task-123"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	session.(*a2aagent.Session).TaskID = "task-123"
 
 	for _, err := range a.RunText("Please make the background transparent", agentopt.Session(session)).All(t.Context()) {
 		if err != nil {
@@ -882,12 +866,8 @@ func TestRunStreamingWithAgentTaskUpdatesSession(t *testing.T) {
 		}
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
-	}
-	if a2aSession.TaskID != "task-456" {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, "task-456")
+	if got := latestTaskID(session); got != "task-456" {
+		t.Errorf("session.TaskID = %q, want %q", got, "task-456")
 	}
 }
 
@@ -991,15 +971,11 @@ func TestRunStreamingWithAgentTaskYieldsUpdate(t *testing.T) {
 		t.Errorf("update.RawRepresentation type = %T, want *a2a.Task", update.RawRepresentation)
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
+	if got := session.ServiceID; got != contextID {
+		t.Errorf("session.ContextID = %q, want %q", got, contextID)
 	}
-	if a2aSession.ContextID != contextID {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, contextID)
-	}
-	if a2aSession.TaskID != taskID {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, taskID)
+	if got := latestTaskID(session); got != taskID {
+		t.Errorf("session.TaskID = %q, want %q", got, taskID)
 	}
 }
 
@@ -1047,15 +1023,11 @@ func TestRunStreamingWithTaskStatusUpdateEvent(t *testing.T) {
 		t.Errorf("update.RawRepresentation type = %T, want *a2a.TaskStatusUpdateEvent", update.RawRepresentation)
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
+	if got := session.ServiceID; got != contextID {
+		t.Errorf("session.ContextID = %q, want %q", got, contextID)
 	}
-	if a2aSession.ContextID != contextID {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, contextID)
-	}
-	if a2aSession.TaskID != taskID {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, taskID)
+	if got := latestTaskID(session); got != taskID {
+		t.Errorf("session.TaskID = %q, want %q", got, taskID)
 	}
 }
 
@@ -1114,14 +1086,10 @@ func TestRunStreamingWithTaskArtifactUpdateEvent(t *testing.T) {
 		t.Errorf("update.String() = %q, want %q", update.String(), artifactContent)
 	}
 
-	a2aSession, ok := session.(*a2aagent.Session)
-	if !ok {
-		t.Fatalf("session type = %T, want *a2aagent.Session", session)
+	if got := session.ServiceID; got != contextID {
+		t.Errorf("session.ContextID = %q, want %q", got, contextID)
 	}
-	if a2aSession.ContextID != contextID {
-		t.Errorf("session.ContextID = %q, want %q", a2aSession.ContextID, contextID)
-	}
-	if a2aSession.TaskID != taskID {
-		t.Errorf("session.TaskID = %q, want %q", a2aSession.TaskID, taskID)
+	if got := latestTaskID(session); got != taskID {
+		t.Errorf("session.TaskID = %q, want %q", got, taskID)
 	}
 }

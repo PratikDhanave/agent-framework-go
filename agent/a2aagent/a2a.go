@@ -30,13 +30,13 @@ type Options struct {
 	Logger      *slog.Logger
 }
 
-type contextIDOpt struct{ string }
+type taskIDOpt struct{ string }
 
-func (contextIDOpt) CreateSessionOption() {}
-func (o contextIDOpt) Value() any         { return o.string }
+func (taskIDOpt) CreateSessionOption() {}
+func (o taskIDOpt) Value() any         { return o.string }
 
-func WithContextID(id string) agentopt.CreateSessionOption {
-	return contextIDOpt{id}
+func TaskID(taskID string) agentopt.CreateSessionOption {
+	return taskIDOpt{taskID}
 }
 
 type a2aagent struct {
@@ -66,22 +66,23 @@ func NewAgent(client *a2aclient.Client, options Options) *agent.Agent {
 	})
 }
 
-func (a *a2aagent) createSession(ctx context.Context, options ...agentopt.CreateSessionOption) (memory.Session, error) {
-	contextID, _ := agentopt.Get(options, WithContextID)
-	return &Session{
-		ContextID: contextID,
-	}, nil
+func (a *a2aagent) createSession(ctx context.Context, options ...agentopt.CreateSessionOption) (*memory.Session, error) {
+	serviceID, _ := agentopt.Get(options, agentopt.ServiceID)
+	session := memory.NewSession("")
+	setContextID(session, serviceID)
+	setTaskIDs(session, slices.Collect(agentopt.All(options, TaskID)))
+	return session, nil
 }
 
-func (a *a2aagent) marshalSession(_ context.Context, session memory.Session) ([]byte, error) {
-	if _, ok := session.(*Session); !ok {
-		return nil, errors.New("the provided session is not compatible with the agent, only sessions created by the agent can be used")
+func (a *a2aagent) marshalSession(_ context.Context, session *memory.Session) ([]byte, error) {
+	if session == nil {
+		return nil, errors.New("the provided session is nil")
 	}
 	return json.Marshal(session)
 }
 
-func (a *a2aagent) unmarshalSession(_ context.Context, data []byte) (memory.Session, error) {
-	var session Session
+func (a *a2aagent) unmarshalSession(_ context.Context, data []byte) (*memory.Session, error) {
+	var session memory.Session
 	if err := json.Unmarshal(data, &session); err != nil {
 		return nil, err
 	}
@@ -90,36 +91,12 @@ func (a *a2aagent) unmarshalSession(_ context.Context, data []byte) (memory.Sess
 
 func (a *a2aagent) run(ctx context.Context, messages []*message.Message, options ...agentopt.RunOption) iter.Seq2[*message.ResponseUpdate, error] {
 	return func(yield func(*message.ResponseUpdate, error) bool) {
-		var session *Session
-		if v, ok := agentopt.Get(options, agentopt.Session); !ok {
-			// Aligning with other agent implementations that support background responses, where
-			// a session is required for background responses to prevent inconsistent experience
-			// for callers if they forget to provide the session for initial or follow-up runs.
-			if opts, ok := agentopt.Get(options, agentopt.AllowBackgroundResponses); ok && opts {
-				yield(nil, errors.New("a session must be provided when AllowBackgroundResponses is enabled"))
-				return
-			}
-			s, err := a.createSession(ctx)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-			session = s.(*Session)
-		} else if s, ok := v.(*Session); ok {
-			session = s
-		} else {
-			yield(nil, errors.New("the provided session is not compatible with the agent, only sessions created by the agent can be used"))
-			return
-		}
+		session, _ := agentopt.Get(options, agentopt.Session)
 		stream, _ := agentopt.Get(options, agentopt.Stream)
 		if token, ok := agentopt.Get(options, agentopt.ContinuationToken); ok && token != "" {
 			if stream {
 				// TODO: support resuming stream responses using continuation tokens.
 				yield(nil, errors.New("reconnecting to task streams using continuation tokens is not supported yet"))
-				return
-			}
-			if len(messages) > 0 {
-				yield(nil, errors.New("messages are not allowed when continuing a background response using a continuation token"))
 				return
 			}
 			task, err := a.Client.GetTask(ctx, &a2a.TaskQueryParams{ID: a2a.TaskID(token)})
@@ -142,9 +119,9 @@ func (a *a2aagent) run(ctx context.Context, messages []*message.Message, options
 				yield(nil, err)
 				return
 			}
-			var taskIDs []a2a.TaskID
-			if session.TaskID != "" {
-				taskIDs = append(taskIDs, a2a.TaskID(session.TaskID))
+			taskIDs := make([]a2a.TaskID, 0, 1)
+			for _, taskID := range getTaskIDs(session) {
+				taskIDs = append(taskIDs, a2a.TaskID(taskID))
 			}
 			params := &a2a.MessageSendParams{
 				Message: &a2a.Message{
@@ -152,7 +129,7 @@ func (a *a2aagent) run(ctx context.Context, messages []*message.Message, options
 					Role:           a2a.MessageRoleUser,
 					Parts:          parts,
 					ReferenceTasks: taskIDs,
-					ContextID:      session.ContextID,
+					ContextID:      getContextID(session),
 				},
 			}
 			var seq iter.Seq2[a2a.Event, error]
@@ -164,12 +141,12 @@ func (a *a2aagent) run(ctx context.Context, messages []*message.Message, options
 					yield(resp, err)
 				}
 			}
-			sendMsg(ctx, session, seq, yield)
+			sendMsg(session, seq, yield)
 		}
 	}
 }
 
-func sendMsg(ctx context.Context, session *Session, seq iter.Seq2[a2a.Event, error], yield func(*message.ResponseUpdate, error) bool) {
+func sendMsg(session *memory.Session, seq iter.Seq2[a2a.Event, error], yield func(*message.ResponseUpdate, error) bool) {
 	for e, err := range seq {
 		if err != nil {
 			yield(nil, err)
@@ -276,17 +253,18 @@ func yieldTask(yield func(*message.ResponseUpdate, error) bool, task *a2a.Task) 
 	return true
 }
 
-func updateSessionContextID(session *Session, contextID, taskID string) error {
+func updateSessionContextID(session *memory.Session, contextID, taskID string) error {
 	if session == nil {
 		return nil
 	}
 	// Surface cases where the A2A agent responds with a response that
 	// has a different context ID than the session's context ID.
-	if session.ContextID != "" && session.ContextID != contextID {
-		return fmt.Errorf("mismatched context ID: session has %q but A2A response has %q", session.ContextID, contextID)
+	currentContextID := getContextID(session)
+	if currentContextID != "" && currentContextID != contextID {
+		return fmt.Errorf("mismatched context ID: session has %q but A2A response has %q", currentContextID, contextID)
 	}
-	session.ContextID = contextID
-	session.TaskID = taskID
+	setContextID(session, contextID)
+	setTaskID(session, taskID)
 	return nil
 }
 
