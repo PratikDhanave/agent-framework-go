@@ -9,11 +9,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/message"
 )
 
-// ANSI color codes
+// ANSI color codes.
 const (
 	colorReset   = "\033[0m"
 	colorRed     = "\033[31m"
@@ -25,12 +26,6 @@ const (
 	colorGray    = "\033[90m"
 	colorBold    = "\033[1m"
 )
-
-func CheckAzureEndpoint(endpoint string) {
-	if endpoint == "" {
-		Panic("AZURE_OPENAI_ENDPOINT environment variable is not set.")
-	}
-}
 
 type kv struct {
 	key, value string
@@ -167,4 +162,15 @@ func printf(format string, args ...any) {
 
 func printerr(err any) {
 	printf("%s❌ Error: %v%s\n\n", colorRed, err, colorReset)
+}
+
+func AzureTokenCredential() *azidentity.DefaultAzureCredential {
+	if os.Getenv("AZURE_OPENAI_ENDPOINT") == "" {
+		Panic("AZURE_OPENAI_ENDPOINT environment variable is not set.")
+	}
+	token, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		Panicf("failed to create Azure default credential: %v", err)
+	}
+	return token
 }
