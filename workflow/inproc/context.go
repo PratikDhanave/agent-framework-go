@@ -56,7 +56,6 @@ func newInProcessRunnerContext(
 	existingOwnerSignoff any,
 	enableConcurrentRuns bool,
 ) (*runnerContext, error) {
-
 	ctx := &runnerContext{
 		wf:                       wf,
 		runID:                    runID,

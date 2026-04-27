@@ -1,0 +1,10 @@
+version: "2"
+linters:
+  enable:
+    - bodyclose
+    - nakedret
+    - predeclared
+    - unconvert
+formatters:
+  enable:
+    - gofumpt
