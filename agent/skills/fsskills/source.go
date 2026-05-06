@@ -237,12 +237,15 @@ func (s *Source) tryParseFrontmatter(content, skillFilePath string) (skills.Fron
 	yamlContent := strings.TrimSpace(contentForParsing[match[2]:match[3]])
 	frontmatter := skills.Frontmatter{}
 
-	for _, kv := range yamlKeyValueRegex.FindAllStringSubmatch(yamlContent, -1) {
-		value := kv[2]
-		if value == "" {
-			value = kv[3]
+	for _, kv := range yamlKeyValueRegex.FindAllStringSubmatchIndex(yamlContent, -1) {
+		key := yamlContent[kv[2]:kv[3]]
+		value := ""
+		if kv[4] >= 0 {
+			value = yamlContent[kv[4]:kv[5]]
+		} else if kv[6] >= 0 {
+			value = parseYamlScalarValue(yamlContent, kv)
 		}
-		switch strings.ToLower(kv[1]) {
+		switch strings.ToLower(key) {
 		case "name":
 			frontmatter.Name = value
 		case "description":
@@ -284,6 +287,108 @@ func (s *Source) tryParseFrontmatter(content, skillFilePath string) (skills.Fron
 	}
 
 	return frontmatter, true
+}
+
+func parseYamlScalarValue(yamlContent string, kv []int) string {
+	value := yamlContent[kv[6]:kv[7]]
+	if value == "" || (value[0] != '|' && value[0] != '>') {
+		return value
+	}
+
+	scalarStyle := value[0]
+	keepTrailingNewline := len(value) > 1 && value[1] == '+'
+	lineBreak := strings.IndexByte(yamlContent[kv[1]:], '\n')
+	if lineBreak < 0 {
+		return value
+	}
+
+	remaining := yamlContent[kv[1]+lineBreak+1:]
+	if before, ok := strings.CutSuffix(remaining, "\n"); ok {
+		remaining = before
+	}
+
+	var blockLines []string
+	for line := range strings.SplitSeq(remaining, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			blockLines = append(blockLines, "")
+			continue
+		}
+		if line[0] != ' ' && line[0] != '\t' {
+			break
+		}
+		blockLines = append(blockLines, line)
+	}
+
+	if len(blockLines) == 0 {
+		return ""
+	}
+
+	commonIndent := -1
+	for _, line := range blockLines {
+		if line == "" {
+			continue
+		}
+		indent := leadingWhitespaceCount(line)
+		if commonIndent < 0 || indent < commonIndent {
+			commonIndent = indent
+		}
+	}
+	if commonIndent < 0 {
+		commonIndent = 0
+	}
+
+	normalizedLines := make([]string, len(blockLines))
+	for i, line := range blockLines {
+		if line == "" {
+			continue
+		}
+		if commonIndent < len(line) {
+			normalizedLines[i] = line[commonIndent:]
+		}
+	}
+
+	var parsedValue string
+	if scalarStyle == '|' {
+		parsedValue = strings.Join(normalizedLines, "\n")
+	} else {
+		parsedValue = foldYamlLines(normalizedLines)
+	}
+
+	if keepTrailingNewline {
+		return parsedValue + "\n"
+	}
+	return parsedValue
+}
+
+func foldYamlLines(lines []string) string {
+	var builder strings.Builder
+	blankLines := 0
+	for _, line := range lines {
+		if line == "" {
+			blankLines++
+			continue
+		}
+
+		if builder.Len() > 0 {
+			if blankLines > 0 {
+				builder.WriteString(strings.Repeat("\n", blankLines))
+			} else {
+				builder.WriteByte(' ')
+			}
+		}
+		builder.WriteString(line)
+		blankLines = 0
+	}
+	return builder.String()
+}
+
+func leadingWhitespaceCount(line string) int {
+	count := 0
+	for count < len(line) && (line[count] == ' ' || line[count] == '\t') {
+		count++
+	}
+	return count
 }
 
 func (s *Source) discoverResourceFiles(skillFS fs.FS, skillName string) []skills.Resource {
