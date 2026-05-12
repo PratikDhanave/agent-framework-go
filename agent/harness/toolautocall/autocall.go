@@ -31,6 +31,14 @@ type Config struct {
 	MaximumConsecutiveErrorsPerRequest int
 	MaximumIterationsPerRequest        int // Default: 40
 	NewID                              func() string
+
+	// EnableMessageInjection enables tool implementations to enqueue additional
+	// messages into the function-call loop via [MessageInjectorFromContext].  When true,
+	// a [MessageInjector] is placed on the context before each round of tool
+	// invocations and drained after all tools have run.  Any queued messages are
+	// appended to the conversation and trigger another provider call, even when
+	// the provider returned no further function calls in the current round.
+	EnableMessageInjection bool
 }
 
 type autocall struct {
@@ -42,6 +50,7 @@ type autocall struct {
 	maximumConsecutiveErrorsPerRequest int
 	maximumIterationsPerRequest        int
 	newID                              func() string
+	enableMessageInjection             bool
 }
 
 // New creates a new function-invoking chat client that wraps the provided client.
@@ -63,6 +72,7 @@ func New(cfg Config) agent.Middleware {
 		maximumConsecutiveErrorsPerRequest: cfg.MaximumConsecutiveErrorsPerRequest,
 		maximumIterationsPerRequest:        cmp.Or(cfg.MaximumIterationsPerRequest, 40),
 		newID:                              cfg.NewID,
+		enableMessageInjection:             cfg.EnableMessageInjection,
 	}
 	return ac
 }
@@ -70,6 +80,15 @@ func New(cfg Config) agent.Middleware {
 func (f *autocall) Run(next agent.RunFunc, ctx context.Context, messages []*message.Message, opts ...agent.Option) iter.Seq2[*agent.ResponseUpdate, error] {
 	return func(yield func(*agent.ResponseUpdate, error) bool) {
 		tools, requiresApproval := f.createToolsMap(agent.AllOptions(opts, agent.WithTool))
+
+		// When message injection is enabled, create a MessageInjector and place it on the
+		// context so that tool implementations can enqueue follow-up messages via
+		// MessageInjectorFromContext(ctx).
+		var injector *MessageInjector
+		if f.enableMessageInjection {
+			injector = &MessageInjector{}
+			ctx = withMessageInjector(ctx, injector)
+		}
 
 		// This is a synthetic ID since we're generating the tool messages instead of getting them from
 		// the underlying provider. When emitting the streamed chunks, it's perfectly valid for us to
@@ -110,10 +129,16 @@ func (f *autocall) Run(next agent.RunFunc, ctx context.Context, messages []*mess
 				return
 			}
 			if newMsg != nil {
+				opts = updateOptionsForNextIteration(opts)
 				messages = append(messages, newMsg)
 				newMsg.ID = toolMsgID
 				if !yield(convertToolResultMsgToUpdate(newMsg, toolMsgID), nil) {
 					return
+				}
+				if injector != nil {
+					if injected := injector.drain(); len(injected) > 0 {
+						messages = append(messages, injected...)
+					}
 				}
 			}
 		}
@@ -206,6 +231,17 @@ func (f *autocall) Run(next agent.RunFunc, ctx context.Context, messages []*mess
 			// If there's nothing more to do, break out of the loop and allow the handling at the
 			// end to configure the response with aggregated data from previous requests.
 			if i >= f.maximumIterationsPerRequest || hasApprovalRequiringFcc || f.shouldTerminateLoopBasedOnHandleableFunctions(functionCallContents, tools) {
+				// When message injection is enabled, check if any tools enqueued messages
+				// during this iteration.  If so, add them to the conversation and continue
+				// the loop so the provider sees the new user messages — even though no
+				// further function calls were returned in this round.
+				if i < f.maximumIterationsPerRequest && injector != nil && len(functionCallContents) == 0 {
+					if injected := injector.drain(); len(injected) > 0 {
+						opts = updateOptionsForNextIteration(opts)
+						messages = append(messages, injected...)
+						continue
+					}
+				}
 				break
 			}
 
@@ -243,6 +279,14 @@ func (f *autocall) Run(next agent.RunFunc, ctx context.Context, messages []*mess
 				Role:     message.RoleAssistant,
 				Contents: assistantContents,
 			}, newMsg)
+
+			// When message injection is enabled, drain any messages enqueued by tools
+			// during this round and append them so the provider receives them on the next call.
+			if injector != nil {
+				if injected := injector.drain(); len(injected) > 0 {
+					messages = append(messages, injected...)
+				}
+			}
 		}
 	}
 }
