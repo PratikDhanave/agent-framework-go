@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/microsoft/agent-framework-go/agent/skills"
 )
@@ -215,11 +216,26 @@ func (s *Source) parseSkillDirectory(skillFS fs.FS, logPath string) *skills.Skil
 
 	resources := s.discoverResourceFiles(skillFS, frontmatter.Name)
 	scripts := s.discoverScriptFiles(skillFS, frontmatter.Name)
+	var (
+		contentOnce   sync.Once
+		cachedContent string
+		contentErr    error
+	)
 	return &skills.Skill{
 		Frontmatter: frontmatter,
-		Content:     content,
-		Resources:   resources,
-		Scripts:     scripts,
+		GetContent: func(context.Context) (string, error) {
+			contentOnce.Do(func() {
+				data, err := fs.ReadFile(skillFS, skillFileName)
+				if err != nil {
+					contentErr = err
+					return
+				}
+				cachedContent = string(data)
+			})
+			return cachedContent, contentErr
+		},
+		Resources: resources,
+		Scripts:   scripts,
 		AdditionalProperties: map[string]any{
 			rootFSPropertyKey: skillFS,
 		},

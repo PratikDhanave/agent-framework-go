@@ -55,8 +55,11 @@ func (f SourceFunc) Skills(ctx context.Context) ([]*Skill, error) {
 
 // Skill describes a domain-specific capability with instructions, resources, and scripts.
 type Skill struct {
-	Frontmatter          Frontmatter
-	Content              string
+	Frontmatter Frontmatter
+	// GetContent lazily loads the skill's instruction text. For file-based skills
+	// this is the raw SKILL.md file content. For code-defined skills this may be
+	// a synthesized document containing name, description, and body.
+	GetContent           func(context.Context) (string, error)
 	Resources            []Resource
 	Scripts              []Script
 	AdditionalProperties map[string]any
