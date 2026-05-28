@@ -8,6 +8,10 @@ updates:
   directory: "/"
   schedule:
     interval: daily
+  groups:
+    opentelemetry:
+      patterns:
+        - "go.opentelemetry.io/*"
   open-pull-requests-limit: 10
 - package-ecosystem: github-actions
   directory: "/"
