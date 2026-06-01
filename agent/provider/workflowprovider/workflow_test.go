@@ -1053,10 +1053,10 @@ func TestNew_ApprovalRoundtrip_ResponseIsProcessed(t *testing.T) {
 	}
 }
 
-// A single resume message containing both the matching response content and
-// additional regular content must dispatch the response and forward the
-// regular content into the workflow.
-func TestNew_MixedResponseAndRegularMessage_BothProcessed(t *testing.T) {
+// A single resume message containing both matching response content and
+// additional regular content must dispatch the response without re-emitting
+// the handled external request.
+func TestNew_MixedResponseAndRegularMessage_ResponseProcessed(t *testing.T) {
 	id := "mixed"
 	port := workflow.RequestPort{
 		ID:       id + "_FunctionCall",
@@ -1164,21 +1164,32 @@ func TestNew_MixedResponseAndRegularMessage_BothProcessed(t *testing.T) {
 		t.Fatalf("second: %v", err)
 	}
 
-	var sawResult, sawSummary bool
+	var sawResult, reemittedRequest bool
+	var errors []string
 	for _, m := range second.Messages {
 		text := m.Contents.Text()
 		if strings.Contains(text, "result:42") {
 			sawResult = true
 		}
-		if strings.Contains(text, "regular:") && strings.Contains(text, "extra") {
-			sawSummary = true
+		for _, c := range m.Contents {
+			switch content := c.(type) {
+			case *message.FunctionCallContent:
+				if content.CallID == requestID {
+					reemittedRequest = true
+				}
+			case *message.ErrorContent:
+				errors = append(errors, content.Message)
+			}
 		}
 	}
 	if !sawResult {
 		t.Errorf("expected response handler to produce 'result:42'; got %+v", second)
 	}
-	if !sawSummary {
-		t.Errorf("expected regular content to be forwarded into the workflow; got %+v", second)
+	if reemittedRequest {
+		t.Errorf("handled external request %q was re-emitted; got %+v", requestID, second)
+	}
+	if len(errors) > 0 {
+		t.Errorf("expected no workflow errors; got %v", errors)
 	}
 }
 
