@@ -4,6 +4,7 @@ package skills_test
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -539,7 +540,7 @@ func TestDiscovery_ResourcesInDefaultDirectories(t *testing.T) {
 	}
 }
 
-func TestDiscovery_ResourceInNonSpecDirectory_NotDiscoveredByDefault(t *testing.T) {
+func TestDiscovery_ResourceInAnySubdirectory_DiscoveredByDefault(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "non-spec-skill", "Non-spec directory", "Body.")
 	skillDir := filepath.Join(root, "non-spec-skill")
@@ -558,19 +559,18 @@ func TestDiscovery_ResourceInNonSpecDirectory_NotDiscoveredByDefault(t *testing.
 		t.Fatal("expected skill to be discovered")
 	}
 	_, tools := captureProviderContext(t, p)
-	// read_skill_resource is always registered; docs/readme.md is in a non-default dir and must not be accessible.
+	// read_skill_resource is always registered; docs/readme.md is discovered by default depth-based scanning.
 	readTool := findTool(t, tools, "read_skill_resource")
 	result, err := readTool.Call(t.Context(), `{"skillName":"non-spec-skill","resourceName":"docs/readme.md"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultStr, ok := result.(string)
-	if !ok || !strings.HasPrefix(resultStr, "Error:") {
-		t.Fatalf("expected error for non-default resource directory, got %#v", result)
+	if result != "docs content" {
+		t.Fatalf("expected docs content, got %#v", result)
 	}
 }
 
-func TestDiscovery_ResourceInSkillRoot_NotDiscoveredByDefault(t *testing.T) {
+func TestDiscovery_ResourceInSkillRoot_DiscoveredByDefault(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "root-resource-skill", "Root resource", "Body.")
 	skillDir := filepath.Join(root, "root-resource-skill")
@@ -581,19 +581,18 @@ func TestDiscovery_ResourceInSkillRoot_NotDiscoveredByDefault(t *testing.T) {
 
 	p := newProvider(t, root)
 	_, tools := captureProviderContext(t, p)
-	// read_skill_resource is always registered; root-level guide.md is not accessible without '.' configured.
+	// read_skill_resource is always registered; root-level files are discovered by default depth-based scanning.
 	readTool := findTool(t, tools, "read_skill_resource")
 	result, err := readTool.Call(t.Context(), `{"skillName":"root-resource-skill","resourceName":"guide.md"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultStr, ok := result.(string)
-	if !ok || !strings.HasPrefix(resultStr, "Error:") {
-		t.Fatalf("expected error for root-level resource without '.' configured, got %#v", result)
+	if result != "guide content" {
+		t.Fatalf("expected guide content, got %#v", result)
 	}
 }
 
-func TestDiscovery_ResourceInSkillRoot_DiscoveredWhenRootDirectoryConfigured(t *testing.T) {
+func TestDiscovery_ResourceInSkillRoot_AccessibleWithDepthOne(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "root-opt-in-skill", "Root opt-in", "Body.")
 	skillDir := filepath.Join(root, "root-opt-in-skill")
@@ -606,7 +605,7 @@ func TestDiscovery_ResourceInSkillRoot_DiscoveredWhenRootDirectoryConfigured(t *
 	}
 
 	p := newProviderWithConfig(t, &fsskills.SourceOptions{
-		ResourceDirectories: []string{"references", "assets", "."},
+		SearchDepth: 1,
 	}, nil, root)
 
 	_, tools := captureProviderContext(t, p)
@@ -635,7 +634,7 @@ func TestDiscovery_SkillMdNotIncludedAsResource(t *testing.T) {
 
 	// Opt into root scanning — SKILL.md should still be excluded
 	p := newProviderWithConfig(t, &fsskills.SourceOptions{
-		ResourceDirectories: []string{"."},
+		SearchDepth: 1,
 	}, nil, root)
 
 	_, tools := captureProviderContext(t, p)
@@ -651,7 +650,7 @@ func TestDiscovery_SkillMdNotIncludedAsResource(t *testing.T) {
 	}
 }
 
-func TestDiscovery_CustomResourceDirectories_ReplacesDefaults(t *testing.T) {
+func TestDiscovery_ResourceFilter_CanRestrictDefaultDiscovery(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "custom-directory-skill", "Custom directory", "Body.")
 	skillDir := filepath.Join(root, "custom-directory-skill")
@@ -671,9 +670,11 @@ func TestDiscovery_CustomResourceDirectories_ReplacesDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set custom directories — only "docs" should be scanned
+	// Restrict discovery to only files under docs/
 	p := newProviderWithConfig(t, &fsskills.SourceOptions{
-		ResourceDirectories: []string{"docs"},
+		ResourceFilter: func(filterCtx fsskills.FilterContext) bool {
+			return strings.HasPrefix(filterCtx.RelativeFilePath, "docs/")
+		},
 	}, nil, root)
 
 	_, tools := captureProviderContext(t, p)
@@ -688,7 +689,7 @@ func TestDiscovery_CustomResourceDirectories_ReplacesDefaults(t *testing.T) {
 		t.Errorf("expected docs content, got %#v", result)
 	}
 
-	// references/ref.md should NOT be readable (defaults replaced)
+	// references/ref.md should NOT be readable (filtered out)
 	result, err = readTool.Call(t.Context(), `{"skillName":"custom-directory-skill","resourceName":"references/ref.md"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -792,7 +793,7 @@ func TestDiscovery_NestedResourceFiles_NotDiscovered(t *testing.T) {
 	}
 }
 
-func TestDiscovery_ResourceDirectoriesWithNestedPath(t *testing.T) {
+func TestDiscovery_SearchDepth_CanReachDeepNestedPath(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "nested-directory-skill", "Nested directory", "Body.")
 	skillDir := filepath.Join(root, "nested-directory-skill")
@@ -806,7 +807,7 @@ func TestDiscovery_ResourceDirectoriesWithNestedPath(t *testing.T) {
 	}
 
 	p := newProviderWithConfig(t, &fsskills.SourceOptions{
-		ResourceDirectories: []string{"f1/f2/f3"},
+		SearchDepth: 4,
 	}, nil, root)
 
 	_, tools := captureProviderContext(t, p)
@@ -821,13 +822,12 @@ func TestDiscovery_ResourceDirectoriesWithNestedPath(t *testing.T) {
 	}
 }
 
-func TestConfig_InvalidDirectoryName_Skipped(t *testing.T) {
-	tests := []string{"..", "../escape", "sub/../escape", "/absolute"}
-	for _, bad := range tests {
-		t.Run(bad, func(t *testing.T) {
-			// Invalid directories are skipped with a warning, not a panic
+func TestConfig_InvalidSearchDepth_UsesDefault(t *testing.T) {
+	tests := []int{0, -1, -5}
+	for _, depth := range tests {
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
 			p := newProviderWithConfig(t, &fsskills.SourceOptions{
-				ResourceDirectories: []string{bad},
+				SearchDepth: depth,
 			}, nil, t.TempDir())
 			if p == nil {
 				t.Fatal("expected non-nil provider")
@@ -836,10 +836,24 @@ func TestConfig_InvalidDirectoryName_Skipped(t *testing.T) {
 	}
 }
 
-func TestConfig_EmptyDirectoryName_Panics(t *testing.T) {
+func TestConfig_ValidSearchDepth(t *testing.T) {
+	tests := []int{1, 2, 4}
+	for _, depth := range tests {
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
+			p := newProviderWithConfig(t, &fsskills.SourceOptions{
+				SearchDepth: depth,
+			}, nil, t.TempDir())
+			if p == nil {
+				t.Fatal("expected non-nil provider")
+			}
+		})
+	}
+}
+
+func TestConfig_InvalidExtension_Panics(t *testing.T) {
 	tests := []struct {
 		name string
-		dir  string
+		ext  string
 	}{
 		{"empty", ""},
 		{"spaces", "   "},
@@ -848,22 +862,22 @@ func TestConfig_EmptyDirectoryName_Panics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			defer func() {
 				if r := recover(); r == nil {
-					t.Fatal("expected panic for empty/whitespace directory name")
+					t.Fatal("expected panic for empty/whitespace extension")
 				}
 			}()
 			newProviderWithConfig(t, &fsskills.SourceOptions{
-				ResourceDirectories: []string{tt.dir},
+				AllowedResourceExtensions: []string{tt.ext},
 			}, nil, t.TempDir())
 		})
 	}
 }
 
-func TestConfig_ValidDirectoryNames(t *testing.T) {
-	tests := []string{"scripts", "my-scripts", "sub/directory", ".", "./scripts", "./scripts/f1", "my..scripts"}
-	for _, valid := range tests {
-		t.Run(valid, func(t *testing.T) {
+func TestConfig_ValidExtensions(t *testing.T) {
+	tests := []string{".md", ".json", ".custom"}
+	for _, ext := range tests {
+		t.Run(ext, func(t *testing.T) {
 			p := newProviderWithConfig(t, &fsskills.SourceOptions{
-				ResourceDirectories: []string{valid},
+				AllowedResourceExtensions: []string{ext},
 			}, nil, t.TempDir())
 			if p == nil {
 				t.Fatal("expected non-nil provider")
@@ -872,7 +886,7 @@ func TestConfig_ValidDirectoryNames(t *testing.T) {
 	}
 }
 
-func TestDiscovery_DuplicateDirectoriesAfterNormalization_NoDuplicateResources(t *testing.T) {
+func TestDiscovery_ReferenceResource_ReadableByDefault(t *testing.T) {
 	root := t.TempDir()
 	createSkillDir(t, root, "dedup-directory-skill", "Dedup test", "Body.")
 	skillDir := filepath.Join(root, "dedup-directory-skill")
@@ -885,10 +899,7 @@ func TestDiscovery_DuplicateDirectoriesAfterNormalization_NoDuplicateResources(t
 		t.Fatal(err)
 	}
 
-	// "references" and "./references" should be deduplicated
-	p := newProviderWithConfig(t, &fsskills.SourceOptions{
-		ResourceDirectories: []string{"references", "./references"},
-	}, nil, root)
+	p := newProvider(t, root)
 
 	_, tools := captureProviderContext(t, p)
 	readTool := findTool(t, tools, "read_skill_resource")
