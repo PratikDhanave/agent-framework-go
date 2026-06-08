@@ -23,6 +23,7 @@ import (
 
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/message"
+	"github.com/microsoft/agent-framework-go/tool"
 )
 
 const stateKey = "toolApprovalState"
@@ -103,7 +104,7 @@ func run(cfg Config, next agent.RunFunc, ctx context.Context, messages []*messag
 
 		// Step 2: If we have queued requests from a previous turn, drain any
 		// that are now auto-approvable and surface the next one.
-		if err := drainAutoApprovable(ctx, cfg, &st); err != nil {
+		if err := drainAutoApprovable(ctx, cfg, &st, opts); err != nil {
 			yield(nil, err)
 			return
 		}
@@ -154,7 +155,7 @@ func run(cfg Config, next agent.RunFunc, ctx context.Context, messages []*messag
 			var autoApproved []*message.ToolApprovalResponseContent
 			var needsApproval []*message.ToolApprovalRequestContent
 			for _, req := range approvalRequests {
-				if matchesRule(st.Rules, req) {
+				if matchesRule(st.Rules, req) || isNotApprovalRequired(req, opts) {
 					autoApproved = append(autoApproved, req.CreateResponse(true, ""))
 				} else {
 					matches, err := matchesAutoApprovalRules(ctx, cfg.AutoApprovalRules, req)
@@ -264,13 +265,11 @@ func prepareInbound(messages []*message.Message, st state) ([]*message.Message, 
 	return messages, st
 }
 
-// drainAutoApprovable removes queued requests that now match a standing rule
-// or an auto-approval rule, adding auto-approve responses to collected.
-func drainAutoApprovable(ctx context.Context, cfg Config, st *state) error {
+// drainAutoApprovable removes queued requests that now match a standing rule,
+// are for tools that do not require approval, or match an auto-approval rule,
+// adding auto-approve responses to collected.
+func drainAutoApprovable(ctx context.Context, cfg Config, st *state, opts []agent.Option) error {
 	if len(st.QueuedRequests) == 0 {
-		return nil
-	}
-	if len(st.Rules) == 0 && len(cfg.AutoApprovalRules) == 0 {
 		return nil
 	}
 	var remaining []*message.ToolApprovalRequestContent
@@ -279,7 +278,7 @@ func drainAutoApprovable(ctx context.Context, cfg Config, st *state) error {
 		if err != nil {
 			return err
 		}
-		if matchesRule(st.Rules, req) || matches {
+		if matchesRule(st.Rules, req) || isNotApprovalRequired(req, opts) || matches {
 			st.CollectedResponses = append(st.CollectedResponses, req.CreateResponse(true, ""))
 		} else {
 			remaining = append(remaining, req)
@@ -302,6 +301,28 @@ func matchesRule(rules []Rule, req *message.ToolApprovalRequestContent) bool {
 		if r.matches(fc.Name, args) {
 			return true
 		}
+	}
+	return false
+}
+
+// isNotApprovalRequired reports whether the tool referenced by req does not
+// require user approval, based on the tools in opts. It returns false
+// (conservatively requiring approval) when the tool cannot be identified.
+func isNotApprovalRequired(req *message.ToolApprovalRequestContent, opts []agent.Option) bool {
+	fc, ok := req.ToolCall.(*message.FunctionCallContent)
+	if !ok || fc == nil {
+		return false
+	}
+	for t := range agent.AllOptions(opts, agent.WithTool) {
+		st, ok := t.(tool.SchemaTool)
+		if !ok || st.Name() != fc.Name {
+			continue
+		}
+		if at, ok := t.(tool.ApprovalRequiredTool); ok {
+			return !at.ApprovalRequired()
+		}
+		// Tool found but not an ApprovalRequiredTool — does not require approval.
+		return true
 	}
 	return false
 }
