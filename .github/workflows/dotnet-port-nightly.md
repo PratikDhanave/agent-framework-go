@@ -1,8 +1,9 @@
 ---
 description: Nightly agent that ports relevant .NET Agent Framework changes into the Go SDK and opens a PR
 tracker-id: dotnet-port-nightly
-features:
-   copilot-requests: true
+engine:
+   id: copilot
+   model: "gpt-5.5?effort=high"
 network:
    allowed:
       - defaults
@@ -26,6 +27,7 @@ permissions:
    contents: read
    pull-requests: read
    issues: read
+   copilot-requests: write
 tools:
    edit:
    bash:

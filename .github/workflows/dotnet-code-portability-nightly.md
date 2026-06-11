@@ -1,8 +1,9 @@
 ---
 description: Nightly agent that proactively refactors Go internals to make .NET-to-Go ports easier without public API or behavior changes
 tracker-id: dotnet-code-portability-nightly
-features:
-   copilot-requests: true
+engine:
+   id: copilot
+   model: "gpt-5.5?effort=high"
 network:
    allowed:
       - defaults
@@ -26,6 +27,7 @@ permissions:
    contents: read
    pull-requests: read
    issues: read
+   copilot-requests: write
 tools:
    edit:
    bash:
