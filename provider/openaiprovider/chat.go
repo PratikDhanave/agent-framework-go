@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -112,6 +113,14 @@ func (a *chatClient) run(ctx context.Context, messages []*message.Message, optio
 		if err != nil {
 			return func(yield func(*agent.ResponseUpdate, error) bool) {
 				yield(nil, err)
+			}
+		}
+		if len(resp.Choices) == 0 {
+			// Some services return a successful response with no choices,
+			// e.g. Azure OpenAI when the prompt is blocked by a content
+			// filter.
+			return func(yield func(*agent.ResponseUpdate, error) bool) {
+				yield(nil, errors.New("chat completion response contained no choices"))
 			}
 		}
 		choice := resp.Choices[0]
