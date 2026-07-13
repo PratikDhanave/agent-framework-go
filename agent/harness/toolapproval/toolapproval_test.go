@@ -1139,8 +1139,10 @@ func TestToolApproval_NilUpdatePassthrough(t *testing.T) {
 			nilUpdates++
 			continue
 		}
-		if tc, ok := u.Contents[0].(*message.TextContent); ok && tc.Text == "done" {
-			textUpdates++
+		for _, c := range u.Contents {
+			if tc, ok := c.(*message.TextContent); ok && tc.Text == "done" {
+				textUpdates++
+			}
 		}
 	}
 	if nilUpdates != 1 {
