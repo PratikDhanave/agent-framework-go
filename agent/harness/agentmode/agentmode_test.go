@@ -6,6 +6,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/microsoft/agent-framework-go/agent"
@@ -46,6 +47,57 @@ func collectInstructions(opts []agent.Option) string {
 		sb.WriteString(inst)
 	}
 	return sb.String()
+}
+
+// TestConcurrentToolInvocations_NoDataRace mirrors toolautocall with
+// AllowConcurrentInvocations enabled, which invokes multiple tool calls from a
+// single model response on separate goroutines that share one session. The
+// mode_set/mode_get tools must therefore be safe for concurrent use. Run with
+// -race to surface unsynchronized session/state access.
+func TestConcurrentToolInvocations_NoDataRace(t *testing.T) {
+	p := agentmode.New(agentmode.Config{})
+	opts := sessionOpts()
+
+	_, outOpts, err := invokeProvider(p, context.Background(), newMessages("hi"), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var setTool, getTool tool.FuncTool
+	for _, tt := range collectTools(outOpts) {
+		ft, ok := tt.(tool.FuncTool)
+		if !ok {
+			continue
+		}
+		switch ft.Name() {
+		case "mode_set":
+			setTool = ft
+		case "mode_get":
+			getTool = ft
+		}
+	}
+	if setTool == nil || getTool == nil {
+		t.Fatalf("expected mode_set and mode_get tools, got set=%v get=%v", setTool, getTool)
+	}
+
+	const n = 50
+	var wg sync.WaitGroup
+	wg.Add(n * 2)
+	for i := 0; i < n; i++ {
+		mode := "plan"
+		if i%2 == 0 {
+			mode = "execute"
+		}
+		go func(mode string) {
+			defer wg.Done()
+			_, _ = setTool.Call(context.Background(), `{"Arg0":"`+mode+`"}`)
+		}(mode)
+		go func() {
+			defer wg.Done()
+			_, _ = getTool.Call(context.Background(), "")
+		}()
+	}
+	wg.Wait()
 }
 
 // 1. ProvideAIContextAsync_ReturnsToolsAndInstructions

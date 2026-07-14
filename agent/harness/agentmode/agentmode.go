@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/message"
@@ -161,6 +162,26 @@ type Provider struct {
 	defaultMode  string
 	instructions string
 	validModes   map[string]struct{}
+
+	sessionLocks    sync.Map // map[sessionKey]*sync.Mutex
+	nullSessionLock sync.Mutex
+}
+
+// getSessionLock returns a per-session mutex. If no session is available,
+// a shared lock is returned so state access is still serialized. This guards
+// the session state against concurrent tool invocations, which toolautocall
+// runs on separate goroutines when AllowConcurrentInvocations is enabled.
+func (p *Provider) getSessionLock(opts []agent.Option) *sync.Mutex {
+	session, ok := agent.GetOption(opts, agent.WithSession)
+	if !ok {
+		return &p.nullSessionLock
+	}
+	key := session.ServiceID()
+	if key == "" {
+		key = "_default"
+	}
+	v, _ := p.sessionLocks.LoadOrStore(key, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 func (p *Provider) Invoking(ctx context.Context, invoking agent.InvokingContext) ([]*message.Message, []agent.Option, error) {
@@ -193,21 +214,14 @@ func (p *Provider) saveState(opts []agent.Option, s *state) {
 
 func (p *Provider) provide(ctx context.Context, invoking agent.InvokingContext) ([]*message.Message, []agent.Option, error) {
 	opts := invoking.Options
+
+	var outMessages []*message.Message
+
+	mu := p.getSessionLock(opts)
+	mu.Lock()
 	st := p.loadState(opts)
 	// Persist the initial state so SetMode can read it.
 	p.saveState(opts, st)
-
-	tools := p.createTools(opts, st)
-	var outOpts []agent.Option
-	for _, t := range tools {
-		outOpts = append(outOpts, agent.WithTool(t))
-	}
-
-	// Add instructions with mode info.
-	instructionText := p.buildInstructions(st.CurrentMode)
-	outOpts = append(outOpts, agent.WithInstructions(instructionText))
-
-	var outMessages []*message.Message
 
 	// If the mode was changed externally (e.g. via SetMode), inject a notification
 	// so the agent clearly sees the change in conversation context.
@@ -219,6 +233,18 @@ func (p *Provider) provide(ctx context.Context, invoking agent.InvokingContext) 
 		st.PreviousMode = ""
 		p.saveState(opts, st)
 	}
+	currentMode := st.CurrentMode
+	mu.Unlock()
+
+	tools := p.createTools(opts)
+	var outOpts []agent.Option
+	for _, t := range tools {
+		outOpts = append(outOpts, agent.WithTool(t))
+	}
+
+	// Add instructions with mode info.
+	instructionText := p.buildInstructions(currentMode)
+	outOpts = append(outOpts, agent.WithInstructions(instructionText))
 
 	return outMessages, outOpts, nil
 }
@@ -235,7 +261,7 @@ func (p *Provider) buildInstructions(currentMode string) string {
 	return result
 }
 
-func (p *Provider) createTools(opts []agent.Option, st *state) []tool.FuncTool {
+func (p *Provider) createTools(opts []agent.Option) []tool.FuncTool {
 	modeNames := make([]string, len(p.modes))
 	for i, m := range p.modes {
 		modeNames[i] = m.Name
@@ -251,6 +277,10 @@ func (p *Provider) createTools(opts []agent.Option, st *state) []tool.FuncTool {
 			if _, ok := p.validModes[mode]; !ok {
 				return "", fmt.Errorf("invalid mode: %q. Supported modes: \"%s\"", mode, modeNamesDisplay)
 			}
+			mu := p.getSessionLock(opts)
+			mu.Lock()
+			defer mu.Unlock()
+			st := p.loadState(opts)
 			st.CurrentMode = mode
 			p.saveState(opts, st)
 			return fmt.Sprintf("Mode changed to %q.", mode), nil
@@ -263,6 +293,10 @@ func (p *Provider) createTools(opts []agent.Option, st *state) []tool.FuncTool {
 			Description: "Get the agent's current operating mode.",
 		},
 		func(ctx context.Context, _ struct{}) (string, error) {
+			mu := p.getSessionLock(opts)
+			mu.Lock()
+			defer mu.Unlock()
+			st := p.loadState(opts)
 			return st.CurrentMode, nil
 		},
 	)
@@ -273,6 +307,9 @@ func (p *Provider) createTools(opts []agent.Option, st *state) []tool.FuncTool {
 // GetMode returns the current operating mode from the session.
 // If no state has been persisted yet, it returns the configured default mode.
 func (p *Provider) GetMode(opts ...agent.Option) string {
+	mu := p.getSessionLock(opts)
+	mu.Lock()
+	defer mu.Unlock()
 	session, ok := agent.GetOption(opts, agent.WithSession)
 	if !ok {
 		return p.defaultMode
@@ -291,6 +328,9 @@ func (p *Provider) SetMode(mode string, opts ...agent.Option) error {
 	if _, ok := p.validModes[mode]; !ok {
 		return fmt.Errorf("agentmode: invalid mode %q", mode)
 	}
+	mu := p.getSessionLock(opts)
+	mu.Lock()
+	defer mu.Unlock()
 	session, ok := agent.GetOption(opts, agent.WithSession)
 	if !ok {
 		return fmt.Errorf("agentmode: no session available")
