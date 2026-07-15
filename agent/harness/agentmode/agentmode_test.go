@@ -83,21 +83,31 @@ func TestConcurrentToolInvocations_NoDataRace(t *testing.T) {
 	const n = 50
 	var wg sync.WaitGroup
 	wg.Add(n * 2)
+	// Each goroutine records its error in a distinct slot so the slice itself
+	// is not a source of races; assert them all after the goroutines finish so
+	// a functional regression (e.g. argument-decode failure) fails the test
+	// deterministically, independent of the race detector.
+	errs := make([]error, n*2)
 	for i := 0; i < n; i++ {
 		mode := "plan"
 		if i%2 == 0 {
 			mode = "execute"
 		}
-		go func(mode string) {
+		go func(idx int, mode string) {
 			defer wg.Done()
-			_, _ = setTool.Call(context.Background(), `{"Arg0":"`+mode+`"}`)
-		}(mode)
-		go func() {
+			_, errs[idx] = setTool.Call(context.Background(), `{"Arg0":"`+mode+`"}`)
+		}(i*2, mode)
+		go func(idx int) {
 			defer wg.Done()
-			_, _ = getTool.Call(context.Background(), "")
-		}()
+			_, errs[idx] = getTool.Call(context.Background(), "")
+		}(i*2 + 1)
 	}
 	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent tool call failed: %v", err)
+		}
+	}
 }
 
 // 1. ProvideAIContextAsync_ReturnsToolsAndInstructions
