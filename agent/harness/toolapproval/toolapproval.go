@@ -136,6 +136,13 @@ func run(cfg Config, next agent.RunFunc, ctx context.Context, messages []*messag
 					yield(nil, err)
 					return
 				}
+				if update == nil {
+					if !yield(nil, nil) {
+						saveState(opts, st)
+						return
+					}
+					continue
+				}
 				stripped, requests := splitApprovalRequestContents(update)
 				approvalRequests = append(approvalRequests, requests...)
 				if stripped != nil {
