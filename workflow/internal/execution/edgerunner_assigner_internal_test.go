@@ -41,3 +41,20 @@ func TestSelectedTargetIDs_AssignerOutOfRangeIndexIgnored(t *testing.T) {
 		t.Fatalf("selectedTargetIDs = %v, want %v", got, want)
 	}
 }
+
+// An Assigner that returns a nil iter.Seq must be tolerated: ranging over a nil
+// function value panics, so target selection must guard against it.
+func TestSelectedTargetIDs_AssignerReturningNilSeqIsTolerated(t *testing.T) {
+	edge := workflow.Edge{
+		Connection: workflow.EdgeConnection{
+			SourceIDs: []string{"src"},
+			SinkIDs:   []string{"a", "b"},
+		},
+		Assigner: func(_ int, _ any) iter.Seq[int] { return nil },
+	}
+
+	got := selectedTargetIDs(edge, &MessageEnvelope{Message: "msg"}) // must not panic
+	if len(got) != 0 {
+		t.Fatalf("selectedTargetIDs = %v, want empty", got)
+	}
+}
