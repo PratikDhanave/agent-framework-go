@@ -128,6 +128,7 @@ func (a *client) run(ctx context.Context, messages []*message.Message, options .
 
 	return func(yield func(*agent.ResponseUpdate, error) bool) {
 		var latestUsage *genai.GenerateContentResponseUsageMetadata
+		var latestUsageResp *genai.GenerateContentResponse
 		for resp, err := range a.client.Models.GenerateContentStream(ctx, a.config.Model, contents, cfg) {
 			if err != nil {
 				yield(nil, err)
@@ -152,6 +153,7 @@ func (a *client) run(ctx context.Context, messages []*message.Message, options .
 			// remember the latest and emit it once after the stream ends.
 			if resp.UsageMetadata != nil {
 				latestUsage = resp.UsageMetadata
+				latestUsageResp = resp
 			}
 			if !yield(&agent.ResponseUpdate{
 				Contents:          streamContents,
@@ -164,9 +166,10 @@ func (a *client) run(ctx context.Context, messages []*message.Message, options .
 		}
 		if latestUsage != nil {
 			yield(&agent.ResponseUpdate{
-				Contents:  []message.Content{&message.UsageContent{Details: toUsageDetails(latestUsage)}},
-				Role:      message.RoleAssistant,
-				CreatedAt: time.Now(),
+				Contents:          []message.Content{&message.UsageContent{Details: toUsageDetails(latestUsage)}},
+				Role:              message.RoleAssistant,
+				CreatedAt:         time.Now(),
+				RawRepresentation: latestUsageResp,
 			}, nil)
 		}
 	}
