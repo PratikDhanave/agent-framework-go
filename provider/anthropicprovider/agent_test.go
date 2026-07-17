@@ -34,7 +34,8 @@ func newTestClient(t *testing.T, server *httptest.Server) *agent.Agent {
 		anthropicprovider.AgentConfig{
 			Model:  "claude-3-5-sonnet-20241022",
 			Config: agent.Config{DisableFuncAutoCall: true},
-		})
+		},
+	)
 }
 
 // nestedKey traverses a decoded JSON map following the given path of keys and
@@ -197,7 +198,8 @@ func TestConfigInstructions(t *testing.T) {
 			Config: agent.Config{
 				DisableFuncAutoCall: true,
 			},
-		})
+		},
+	)
 
 	if _, err := a.RunText(t.Context(), "hi").Collect(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -453,5 +455,29 @@ func TestStreamingToolCallsSupportInterleavedDeltas(t *testing.T) {
 		if call.Arguments != want[call.CallID] {
 			t.Errorf("call %q arguments = %q, want %q", call.CallID, call.Arguments, want[call.CallID])
 		}
+	}
+}
+
+// Building the request must not mutate the caller's MessageNewParams slices.
+// The provider appends system instructions to params.System; if it shares the
+// caller's backing array (spare capacity), the append corrupts the caller's data.
+func TestBuildMessageParams_DoesNotMutateCallerSystemSlice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"m","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	defer server.Close()
+	a := newTestClient(t, server)
+
+	// Caller-supplied System slice with spare capacity.
+	system := make([]anthropic.TextBlockParam, 1, 4)
+	system[0] = anthropic.TextBlockParam{Text: "s0"}
+	opt := anthropicprovider.MessageNewParams(anthropic.MessageNewParams{System: system})
+
+	if _, err := a.RunText(t.Context(), "hi", agent.WithInstructions("added"), opt).Collect(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if full := system[:cap(system)]; full[1].Text != "" {
+		t.Errorf("provider mutated the caller's System backing array: spare slot = %q", full[1].Text)
 	}
 }
