@@ -339,6 +339,15 @@ func agentContentToMCPContent(contentValue message.Content) mcp.Content {
 			return &mcp.ImageContent{Data: data, MIMEType: contentValue.MediaType}
 		case "audio":
 			return &mcp.AudioContent{Data: data, MIMEType: contentValue.MediaType}
+		case "text":
+			// Text resources carry their payload in Text, not Blob. The reverse
+			// mapping (mcpContentToAgentContent) already reads Resource.Text for
+			// text; emitting Blob here would make text unreadable to MCP clients.
+			return &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+				URI:      contentValue.Name,
+				MIMEType: contentValue.MediaType,
+				Text:     string(data),
+			}}
 		default:
 			return &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
 				URI:      contentValue.Name,

@@ -732,6 +732,35 @@ func TestAddToolReturnsBinaryDataAsEmbeddedResource(t *testing.T) {
 	}
 }
 
+// A text DataContent must be surfaced as an MCP text resource (Resource.Text),
+// not a binary Blob; the reverse mapping reads Resource.Text for text resources.
+func TestAddToolReturnsTextDataAsTextResource(t *testing.T) {
+	result := callAddedTool(t, stubFuncTool{
+		name:         "text-result",
+		description:  "returns text content",
+		schema:       map[string]any{"type": "object"},
+		returnSchema: map[string]any{"type": "object"},
+		call: func(context.Context, string) (any, error) {
+			// "hello" base64-encoded, with a text media type.
+			return &message.DataContent{Name: "note.txt", Data: "aGVsbG8=", MediaType: "text/plain"}, nil
+		},
+	})
+
+	if len(result.Content) != 1 {
+		t.Fatalf("expected one content item, got %d", len(result.Content))
+	}
+	embedded, ok := result.Content[0].(*mcp.EmbeddedResource)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.EmbeddedResource", result.Content[0])
+	}
+	if embedded.Resource.Text != "hello" {
+		t.Errorf("resource Text = %q, want %q", embedded.Resource.Text, "hello")
+	}
+	if len(embedded.Resource.Blob) != 0 {
+		t.Errorf("text resource must not use Blob, got %#v", embedded.Resource.Blob)
+	}
+}
+
 func TestCallReturnsEmptyAndStructuredOnlyMCPResults(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		result := callMCPResult(t, &mcp.CallToolResult{})
