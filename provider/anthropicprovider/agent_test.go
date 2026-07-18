@@ -496,14 +496,25 @@ func TestToolUseEmptyArgumentsSerializeAsObject(t *testing.T) {
 	if err := json.Unmarshal(<-bodyCh, &req); err != nil {
 		t.Fatalf("unmarshal request body: %v", err)
 	}
+	messages, ok := req["messages"].([]any)
+	if !ok {
+		t.Fatalf("request messages = %#v, want a JSON array", req["messages"])
+	}
 	found := false
-	for _, m := range req["messages"].([]any) {
-		blocks, ok := m.(map[string]any)["content"].([]any)
+	for _, m := range messages {
+		msg, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := msg["content"].([]any)
 		if !ok {
 			continue
 		}
 		for _, b := range blocks {
-			block := b.(map[string]any)
+			block, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
 			if block["type"] != "tool_use" || block["id"] != "toolu_1" {
 				continue
 			}
