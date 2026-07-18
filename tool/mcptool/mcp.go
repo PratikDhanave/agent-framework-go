@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/microsoft/agent-framework-go/message"
 	"github.com/microsoft/agent-framework-go/tool"
@@ -349,6 +350,24 @@ func agentContentToMCPContent(contentValue message.Content) mcp.Content {
 				return &mcp.ImageContent{Data: data, MIMEType: c.MediaType}
 			case "audio":
 				return &mcp.AudioContent{Data: data, MIMEType: c.MediaType}
+			case "text":
+				// Text resources carry their payload in Text, not Blob. The reverse
+				// mapping (mcpContentToAgentContent) already reads Resource.Text for
+				// text; emitting Blob here would make text unreadable to MCP clients.
+				// Non-UTF-8 payloads cannot survive JSON transport as Text (invalid
+				// sequences are replaced), so fall back to Blob for those.
+				if utf8.Valid(data) {
+					return &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+						URI:      c.Name,
+						MIMEType: c.MediaType,
+						Text:     string(data),
+					}}
+				}
+				return &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+					URI:      c.Name,
+					MIMEType: c.MediaType,
+					Blob:     data,
+				}}
 			default:
 				return &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
 					URI:      c.Name,
