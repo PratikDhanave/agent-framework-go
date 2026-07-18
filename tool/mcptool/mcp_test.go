@@ -706,6 +706,35 @@ func TestAddToolReturnsDataAndMultipleContentResults(t *testing.T) {
 	})
 }
 
+// A text-typed DataContent whose bytes are not valid UTF-8 must fall back to a
+// binary Blob resource; putting invalid UTF-8 in Text corrupts it on transport.
+func TestAddToolReturnsInvalidUTF8TextAsBlob(t *testing.T) {
+	result := callAddedTool(t, stubFuncTool{
+		name:         "bad-utf8-result",
+		description:  "returns text media type with non-UTF-8 bytes",
+		schema:       map[string]any{"type": "object"},
+		returnSchema: map[string]any{"type": "object"},
+		call: func(context.Context, string) (any, error) {
+			// "//4=" is base64 for {0xff, 0xfe}, which is not valid UTF-8.
+			return &message.DataContent{Name: "note.txt", Data: "//4=", MediaType: "text/plain"}, nil
+		},
+	})
+
+	if len(result.Content) != 1 {
+		t.Fatalf("expected one content item, got %d", len(result.Content))
+	}
+	embedded, ok := result.Content[0].(*mcp.EmbeddedResource)
+	if !ok {
+		t.Fatalf("content is %T, want *mcp.EmbeddedResource", result.Content[0])
+	}
+	if embedded.Resource.Text != "" {
+		t.Errorf("Resource.Text = %q, want empty (non-UTF-8 must not be placed in Text)", embedded.Resource.Text)
+	}
+	if len(embedded.Resource.Blob) == 0 {
+		t.Error("Resource.Blob is empty, want the raw non-UTF-8 bytes")
+	}
+}
+
 func TestAddToolReturnsBinaryDataAsEmbeddedResource(t *testing.T) {
 	result := callAddedTool(t, stubFuncTool{
 		name:         "binary-result",
