@@ -334,6 +334,50 @@ data: [DONE]
 	}
 }
 
+// TestChatStreamingRefusal_SurfacesErrorContent verifies that a refusal streamed
+// via delta.refusal is surfaced as ErrorContent, matching the non-streaming path
+// (which converts choice.Message.Refusal to ErrorContent).
+func TestChatStreamingRefusal_SurfacesErrorContent(t *testing.T) {
+	const input = `
+            {
+                "messages":[{"role":"user","content":"do something disallowed"}],
+                "model":"gpt-4o-mini",
+                "stream":true
+            }
+            `
+	const output = `data: {"id":"chatcmpl-refusal01","object":"chat.completion.chunk","created":1727889370,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"role":"assistant","refusal":"I'm sorry, I can't "},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-refusal01","object":"chat.completion.chunk","created":1727889370,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"refusal":"help with that."},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-refusal01","object":"chat.completion.chunk","created":1727889370,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":null}
+
+data: [DONE]
+
+`
+	server := newTestServerStreaming(t, input, output)
+	defer server.Close()
+
+	a := newTestClient(server)
+
+	var refusal *message.ErrorContent
+	for update, err := range a.RunText(t.Context(), "do something disallowed", agent.Stream(true)) {
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		for _, c := range update.Contents {
+			if ec, ok := c.(*message.ErrorContent); ok {
+				refusal = ec
+			}
+		}
+	}
+	if refusal == nil {
+		t.Fatal("expected ErrorContent for streamed refusal, got none")
+	}
+	if refusal.Message != "I'm sorry, I can't help with that." {
+		t.Errorf("refusal message = %q, want full accumulated refusal", refusal.Message)
+	}
+}
+
 func TestChatMultipleMessages_NonStreaming(t *testing.T) {
 	const input = `
             {

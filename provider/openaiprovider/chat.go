@@ -174,6 +174,9 @@ func (a *chatClient) run(ctx context.Context, messages []*message.Message, optio
 					Arguments: tc.Arguments,
 				})
 			}
+			if refusal, ok := acc.JustFinishedRefusal(); ok {
+				contents = append(contents, &message.ErrorContent{Message: refusal})
+			}
 			role := message.RoleAssistant
 			if len(chunk.Choices) > 0 {
 				choice := chunk.Choices[0]
