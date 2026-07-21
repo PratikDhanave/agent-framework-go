@@ -66,6 +66,7 @@ func (m *messageMerger) ComputeMerged(primaryResponseID string, primaryAgentID s
 	}
 
 	messages = append(messages, m.danglingState.computeFlattened()...)
+	messages = foldIdentifierlessMessages(messages)
 	messages = cleanupMergedMessages(messages)
 
 	response := &agent.Response{
@@ -221,6 +222,45 @@ func messagesWithCreatedAt(response *agent.Response) []*message.Message {
 		messages = append(messages, clone)
 	}
 	return messages
+}
+
+func foldIdentifierlessMessages(messages []*message.Message) []*message.Message {
+	for i := len(messages) - 1; i > 0; i-- {
+		current := messages[i-1]
+		next := messages[i]
+		if current == nil || next == nil {
+			continue
+		}
+		if !isIdentifierlessAssistantReasoningMessage(current) || next.ID == "" || current.Role != next.Role {
+			continue
+		}
+
+		merged := next.Clone()
+		merged.AuthorName = cmp.Or(next.AuthorName, current.AuthorName)
+		merged.AdditionalProperties = mergeProperties(current.AdditionalProperties, merged.AdditionalProperties)
+		if merged.CreatedAt.IsZero() {
+			merged.CreatedAt = current.CreatedAt
+		}
+		merged.Contents = append(slices.Clone(current.Contents), next.Contents...)
+		if merged.Source == (message.Source{}) {
+			merged.Source = current.Source
+		}
+		messages[i] = merged
+		messages = append(messages[:i-1], messages[i:]...)
+	}
+	return messages
+}
+
+func isIdentifierlessAssistantReasoningMessage(msg *message.Message) bool {
+	if msg == nil || msg.ID != "" || msg.Role != message.RoleAssistant || len(msg.Contents) == 0 {
+		return false
+	}
+	for _, content := range msg.Contents {
+		if _, ok := content.(*message.TextReasoningContent); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func mergeProperties(current, incoming map[string]any) map[string]any {
