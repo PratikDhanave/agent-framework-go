@@ -1,21 +1,23 @@
-// Copyright (c) Microsoft. All rights reserved.
-
 package main
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
-	"github.com/microsoft/agent-framework-go/examples/internal/demo"
 	"github.com/microsoft/agent-framework-go/workflow"
 	"github.com/microsoft/agent-framework-go/workflow/inproc"
 )
 
-var _ = demo.NewLogger(
-	"Workflow Streaming",
-	"This sample streams workflow events from a simple text processing pipeline.",
-)
+// This sample introduces streaming output in workflows.
+//
+// While a basic workflow waits for the entire workflow to complete before showing results,
+// this example streams events back to you in real-time as each executor finishes processing.
+// This is useful for monitoring long-running workflows or providing live feedback to users.
+//
+// The workflow logic is identical: uppercase text, then reverse it. The difference is in
+// how we observe the execution - we see intermediate results as they happen.
 
 func main() {
 	uppercase := workflow.NewExecutor("UppercaseExecutor", func(input string) string {
@@ -33,28 +35,27 @@ func main() {
 		WithOutputFrom(reverse).
 		Build()
 	if err != nil {
-		demo.Panic(err)
+		panic(err)
 	}
 
-	run, err := inproc.Default.RunStreaming(context.Background(), wf, "Hello, World!")
+	ctx := context.Background()
+	run, err := inproc.Default.RunStreaming(ctx, wf, "Hello, World!")
 	if err != nil {
-		demo.Panic(err)
+		panic(err)
 	}
-	defer func() { _ = run.Close(context.Background()) }()
+	defer func() { _ = run.Close(ctx) }()
 
-	for evt, err := range run.WatchStream(context.Background()) {
+	for evt, err := range run.WatchStream(ctx) {
 		if err != nil {
-			demo.Panic(err)
+			panic(err)
 		}
 		switch e := evt.(type) {
 		case workflow.ExecutorCompletedEvent:
-			demo.Assistantf("%s: %v", e.ExecutorID, e.Result)
-		case workflow.OutputEvent:
-			demo.Assistantf("Output: %v", e.Output)
+			fmt.Printf("%s: %v\n", e.ExecutorID, e.Result)
 		case workflow.ErrorEvent:
-			demo.Panic(e.Error)
+			fmt.Printf("ERROR: %v\n", e.Error)
 		case workflow.ExecutorFailedEvent:
-			demo.Panic(e.Error)
+			fmt.Printf("Executor '%s' failed: %v\n", e.ExecutorID, e.Error)
 		}
 	}
 }

@@ -1,78 +1,81 @@
-// Copyright (c) Microsoft. All rights reserved.
-
 package main
 
 import (
 	"context"
 	"fmt"
+	"os"
+	"reflect"
 
 	"github.com/microsoft/agent-framework-go/agent"
-	"github.com/microsoft/agent-framework-go/examples/internal/demo"
-	"github.com/microsoft/agent-framework-go/message"
 	"github.com/microsoft/agent-framework-go/provider/foundryprovider"
 	"github.com/microsoft/agent-framework-go/workflow"
-	"github.com/microsoft/agent-framework-go/workflow/agentworkflow"
 	"github.com/microsoft/agent-framework-go/workflow/inproc"
 )
 
-var logger = demo.NewLogger(
-	"Agents in Workflows",
-	"This sample runs translation agents as workflow executors.",
-	"Model", demo.FoundryModel,
-)
+// This sample demonstrates using agents in workflows.
+// Three translation agents are chained sequentially:
+// French -> Spanish -> English.
 
 func main() {
-	cfg := agentworkflow.Config{
-		DisableForwardIncomingMessages: true,
+	endpoint := os.Getenv("FOUNDRY_PROJECT_ENDPOINT")
+	model := os.Getenv("FOUNDRY_MODEL")
+	if model == "" {
+		model = "gpt-4o-mini"
 	}
-	french := agentworkflow.New(newTranslationAgent("French"), cfg)
-	spanish := agentworkflow.New(newTranslationAgent("Spanish"), cfg)
-	english := agentworkflow.New(newTranslationAgent("English"), cfg)
 
-	wf, err := workflow.NewBuilder(french).
-		AddEdge(french, spanish).
-		AddEdge(spanish, english).
-		WithOutputFrom(english).
+	frenchAgent := getTranslationAgent("French", endpoint, model)
+	spanishAgent := getTranslationAgent("Spanish", endpoint, model)
+	englishAgent := getTranslationAgent("English", endpoint, model)
+
+	wf, err := workflow.NewBuilder(frenchAgent).
+		AddEdge(frenchAgent, spanishAgent).
+		AddEdge(spanishAgent, englishAgent).
 		Build()
 	if err != nil {
-		demo.Panic(err)
+		panic(err)
 	}
 
 	ctx := context.Background()
-
-	run, err := inproc.Default.RunStreaming(ctx, wf, message.NewText("Hello World"))
+	run, err := inproc.Default.RunStreaming(ctx, wf, "Hello World!")
 	if err != nil {
-		demo.Panic(err)
+		panic(err)
 	}
 	defer func() { _ = run.Close(ctx) }()
 
-	emitEvents := true
-	if err := run.SendMessage(ctx, workflow.TurnToken{EmitEvents: &emitEvents}); err != nil {
-		demo.Panic(err)
-	}
 	for evt, err := range run.WatchStream(ctx) {
 		if err != nil {
-			demo.Panic(err)
+			panic(err)
 		}
-		if out, ok := evt.(workflow.OutputEvent); ok {
-			if update, ok := out.Output.(*agent.ResponseUpdate); ok {
-				demo.Assistantf("%s: %s", out.ExecutorID, update.String())
-			}
+		switch e := evt.(type) {
+		case workflow.OutputEvent:
+			fmt.Printf("Workflow Output: %v\n", e.Output)
+		case workflow.ErrorEvent:
+			fmt.Printf("ERROR: %v\n", e.Error)
+		case workflow.ExecutorFailedEvent:
+			fmt.Printf("Executor '%s' failed: %v\n", e.ExecutorID, e.Error)
 		}
 	}
 }
 
-func newTranslationAgent(language string) *agent.Agent {
-	return foundryprovider.NewAgent(
-		demo.FoundryProjectEndpoint,
-		demo.FoundryTokenCredential(),
-		foundryprovider.ModelDeployment(demo.FoundryModel),
+func getTranslationAgent(targetLanguage, endpoint, model string) workflow.ExecutorBinding {
+	a := foundryprovider.NewAgent(endpoint, nil, foundryprovider.ModelDeployment(model),
 		foundryprovider.AgentConfig{
-			Instructions: fmt.Sprintf("Translate the user's text to %s. Return only the translation.", language),
+			Instructions: fmt.Sprintf("You are a translation assistant that translates the provided text to %s.", targetLanguage),
 			Config: agent.Config{
-				Name:        language,
-				Middlewares: []agent.Middleware{logger},
+				Name: targetLanguage,
 			},
 		},
 	)
+	return workflow.BindNewExecutorFunc(targetLanguage, func(_ string, executorID string) (*workflow.Executor, error) {
+		return &workflow.Executor{
+			ID: executorID,
+			ConfigureProtocol: func(rb *workflow.ProtocolBuilder) (*workflow.ProtocolBuilder, error) {
+				rb.RouteBuilder.
+					AddHandlerRaw(reflect.TypeFor[string](), reflect.TypeFor[string](), func(ctx *workflow.Context, msg any) (any, error) {
+						return a.RunText(ctx, msg.(string)).Collect()
+					})
+				return rb, nil
+			},
+		}, nil
+	})
 }
