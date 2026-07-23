@@ -88,26 +88,51 @@ func (a *a2aProvider) run(ctx context.Context, messages []*message.Message, opti
 			yieldTask(yield, task)
 			return
 		}
+		if len(messages) == 0 {
+			return
+		}
+		// Collect the parts of every input message into a single A2A message so the
+		// run issues exactly one request, matching the framework's one-run/one-request
+		// contract (and the .NET/Python A2A providers, which map a run's messages to a
+		// single A2A Message). Issuing one request per message would also cross-link the
+		// later messages to the task created by the first via ReferenceTasks/TaskID.
 		var parts a2a.ContentParts
+		var msgID string
+		var metadata map[string]any
 		for _, msg := range messages {
-			parts = parts[:0] // reset parts slice
-			parts, err := contentsToParts(msg.Contents, parts)
+			var err error
+			parts, err = contentsToParts(msg.Contents, parts)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
-			params := &a2a.SendMessageRequest{Message: createA2AMessage(session, msg, parts)}
-			var seq iter.Seq2[a2a.Event, error]
-			if stream {
-				seq = a.client.SendStreamingMessage(ctx, params)
-			} else {
-				resp, err := a.client.SendMessage(ctx, params)
-				seq = func(yield func(a2a.Event, error) bool) {
-					yield(resp, err)
-				}
+			if msg.ID != "" {
+				msgID = msg.ID
 			}
-			sendMsg(session, seq, yield)
+			if len(msg.AdditionalProperties) > 0 {
+				if metadata == nil {
+					metadata = make(map[string]any, len(msg.AdditionalProperties))
+				}
+				maps.Copy(metadata, msg.AdditionalProperties)
+			}
 		}
+		// Build a single combined message from the collected parts, ID and metadata,
+		// then reuse createA2AMessage for the ContextID/task-linking logic so the run
+		// issues exactly one request.
+		combined := &message.Message{ID: msgID, AdditionalProperties: metadata}
+		userMsg := createA2AMessage(session, combined, parts)
+
+		params := &a2a.SendMessageRequest{Message: userMsg}
+		var seq iter.Seq2[a2a.Event, error]
+		if stream {
+			seq = a.client.SendStreamingMessage(ctx, params)
+		} else {
+			resp, err := a.client.SendMessage(ctx, params)
+			seq = func(yield func(a2a.Event, error) bool) {
+				yield(resp, err)
+			}
+		}
+		sendMsg(session, seq, yield)
 	}
 }
 
