@@ -5,7 +5,9 @@ package foundryprovider
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -114,6 +116,31 @@ func newMemoryProvider(client *azaiprojects.MemoryStoresClient, memoryStoreName 
 	p.providerConfig.Store = p.store
 	p.provider = agent.NewContextProvider(p.providerConfig)
 	return p
+}
+
+// EnsureMemoryStoreCreated provisions the configured Foundry memory store when it does not
+// already exist. It first retrieves the store; if the store is present the call is a no-op.
+// When the store is missing (HTTP 404) it creates a default memory store backed by the given
+// chat and embedding model deployments, applying description when non-nil. Any other retrieval
+// error is returned unchanged.
+func (p *MemoryProvider) EnsureMemoryStoreCreated(ctx context.Context, chatModel, embeddingModel string, description *string) error {
+	if _, err := p.client.GetMemoryStore(ctx, p.memoryStoreName, nil); err != nil {
+		var respErr *azcore.ResponseError
+		if !errors.As(err, &respErr) || respErr.StatusCode != http.StatusNotFound {
+			return err
+		}
+		def := &azaiprojects.MemoryStoreDefaultDefinition{
+			ChatModel:      &chatModel,
+			EmbeddingModel: &embeddingModel,
+		}
+		var options *azaiprojects.MemoryStoresClientCreateMemoryStoreOptions
+		if description != nil {
+			options = &azaiprojects.MemoryStoresClientCreateMemoryStoreOptions{Description: description}
+		}
+		_, err = p.client.CreateMemoryStore(ctx, p.memoryStoreName, def, options)
+		return err
+	}
+	return nil
 }
 
 func (p *MemoryProvider) Invoking(ctx context.Context, invoking agent.InvokingContext) ([]*message.Message, []agent.Option, error) {
