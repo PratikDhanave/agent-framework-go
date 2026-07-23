@@ -3,6 +3,8 @@
 package a2aprovider
 
 import (
+	"slices"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/microsoft/agent-framework-go/agent"
 )
@@ -24,7 +26,14 @@ func setTaskID(session *agent.Session, taskID string) {
 	if taskID == "" {
 		return
 	}
-	setTaskIDs(session, append(getTaskIDs(session), taskID))
+	existing := getTaskIDs(session)
+	// The same task ID is reported on every streamed event for a task, so guard
+	// against re-adding an ID that is already stored. slices.Contains keeps
+	// interleaved distinct task IDs working.
+	if slices.Contains(existing, taskID) {
+		return
+	}
+	setTaskIDs(session, append(existing, taskID))
 }
 
 func setTaskIDs(session *agent.Session, taskIDs []string) {

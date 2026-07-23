@@ -707,6 +707,72 @@ func TestRunWithMultipleTaskIDsInSessionAndMessage(t *testing.T) {
 	}
 }
 
+// TestRunDeduplicatesTaskIDsAcrossTurns tests that repeating the same task ID
+// across turns (as happens when every streamed event carries the same task ID)
+// stores it only once, so follow-up requests do not accumulate duplicates.
+func TestRunDeduplicatesTaskIDsAcrossTurns(t *testing.T) {
+	transport := &mockA2ATransport{
+		responseToReturn: &a2a.Task{
+			ID:        a2a.TaskID("task-123"),
+			ContextID: "ctx-123",
+			Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
+		},
+	}
+	a := newTestAgent(transport, agent.Config{})
+
+	session, err := a.CreateSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if _, err := a.RunText(t.Context(), "Do something", agent.WithSession(session)).Collect(); err != nil {
+			t.Fatalf("run %d error = %v, want nil", i, err)
+		}
+	}
+
+	taskIDs := a2a1.TaskIDsFromSession(session)
+	if len(taskIDs) != 1 || taskIDs[0] != "task-123" {
+		t.Fatalf("TaskIDsFromSession = %v, want [task-123]", taskIDs)
+	}
+}
+
+// TestRunKeepsDistinctTaskIDs tests that dedup does not collapse distinct task IDs.
+func TestRunKeepsDistinctTaskIDs(t *testing.T) {
+	transport := &mockA2ATransport{
+		responseToReturn: &a2a.Task{
+			ID:        a2a.TaskID("task-123"),
+			ContextID: "ctx-123",
+			Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
+		},
+	}
+	a := newTestAgent(transport, agent.Config{})
+
+	session, err := a.CreateSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.RunText(t.Context(), "Do something", agent.WithSession(session)).Collect(); err != nil {
+		t.Fatalf("first run error = %v, want nil", err)
+	}
+
+	transport.responseToReturn = &a2a.Task{
+		ID:        a2a.TaskID("task-456"),
+		ContextID: "ctx-123",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
+	}
+	if _, err := a.RunText(t.Context(), "Do something else", agent.WithSession(session)).Collect(); err != nil {
+		t.Fatalf("second run error = %v, want nil", err)
+	}
+
+	taskIDs := a2a1.TaskIDsFromSession(session)
+	want := []string{"task-123", "task-456"}
+	if len(taskIDs) != len(want) || taskIDs[0] != want[0] || taskIDs[1] != want[1] {
+		t.Fatalf("TaskIDsFromSession = %v, want %v", taskIDs, want)
+	}
+}
+
 func assertTaskRoutingAfterFollowUp(t *testing.T, initialTaskID string, initialTaskState a2a.TaskState, wantTaskID string, wantReferenceTask string) {
 	transport := &mockA2ATransport{
 		responseToReturn: &a2a.Task{
