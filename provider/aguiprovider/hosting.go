@@ -102,7 +102,16 @@ func streamEvents(
 ) error {
 	for evt, err := range events {
 		if err != nil {
-			_ = writer.WriteErrorEvent(ctx, w, err, "")
+			// updatesToAGUIEvents yields a proper RUN_ERROR terminal event
+			// (carrying the runID) alongside the error on every failure path.
+			// Prefer emitting that so consumers see a standard RUN_ERROR frame;
+			// WriteErrorEvent would instead write a non-standard CUSTOM event
+			// with no runID that the AG-UI client accumulator silently drops.
+			if evt != nil {
+				_ = writer.WriteEvent(ctx, w, evt)
+			} else {
+				_ = writer.WriteErrorEvent(ctx, w, err, "")
+			}
 			return err
 		}
 		if evt == nil {
