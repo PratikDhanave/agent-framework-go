@@ -40,7 +40,7 @@ const (
 	TagErrorMessage            = "error.message"
 	TagSessionID               = "session.id"
 	TagExecutorID              = "executor.id"
-	TagImplementationID        = "executor.implementation.id"
+	TagExecutorType            = "executor.type"
 	TagExecutorInput           = "executor.input"
 	TagExecutorOutput          = "executor.output"
 	TagMessageType             = "message.type"
@@ -218,7 +218,7 @@ func (c *Context) StartExecutorProcess(ctx context.Context, executorID, implemen
 	ctx, span := c.start(ctx, ActivityExecutorProcess+" "+executorID, workflowobservability.SpanOptions{SourceTraceContext: traceContext})
 	span.SetAttributes(
 		workflowobservability.StringAttribute(TagExecutorID, executorID),
-		workflowobservability.StringAttribute(TagImplementationID, implementationID),
+		workflowobservability.StringAttribute(TagExecutorType, implementationID),
 		workflowobservability.StringAttribute(TagMessageType, messageType),
 	)
 	if c.optionsOrZero().EnableSensitiveData {
