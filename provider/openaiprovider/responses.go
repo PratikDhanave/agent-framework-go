@@ -426,6 +426,18 @@ func responsesBuildCompletionParams(config AgentConfig, messages []*message.Mess
 			if tl.Authorization != "" {
 				variant.Authorization = openai.String(tl.Authorization)
 			}
+			if len(tl.AlwaysRequireApproval) > 0 || len(tl.NeverRequireApproval) > 0 {
+				variant.RequireApproval.OfMcpToolApprovalFilter = &responses.ToolMcpRequireApprovalMcpToolApprovalFilterParam{
+					Always: responses.ToolMcpRequireApprovalMcpToolApprovalFilterAlwaysParam{
+						ToolNames: tl.AlwaysRequireApproval,
+					},
+					Never: responses.ToolMcpRequireApprovalMcpToolApprovalFilterNeverParam{
+						ToolNames: tl.NeverRequireApproval,
+					},
+				}
+			} else if tl.ApprovalMode != "" {
+				variant.RequireApproval.OfMcpToolApprovalSetting = openai.String(tl.ApprovalMode)
+			}
 			params.Tools = append(params.Tools, responses.ToolUnionParam{
 				OfMcp: &variant,
 			})
