@@ -186,7 +186,7 @@ func (resp *Response) Update(update *ResponseUpdate) {
 	msg.AuthorName = cmp.Or(update.AuthorName, msg.AuthorName)
 	msg.Role = cmp.Or(update.Role, msg.Role)
 	msg.ID = cmp.Or(update.MessageID, msg.ID)
-	if msg.CreatedAt.IsZero() && isValidCreatedAt(update.CreatedAt) {
+	if !isValidCreatedAt(msg.CreatedAt) && isValidCreatedAt(update.CreatedAt) {
 		msg.CreatedAt = update.CreatedAt
 	}
 	msg.Contents = append(msg.Contents, update.Contents...)
@@ -214,7 +214,7 @@ func (resp *Response) Update(update *ResponseUpdate) {
 	} else {
 		resp.ContinuationToken = update.ContinuationToken
 	}
-	if resp.CreatedAt.IsZero() && isValidCreatedAt(update.CreatedAt) {
+	if !isValidCreatedAt(resp.CreatedAt) && isValidCreatedAt(update.CreatedAt) {
 		resp.CreatedAt = update.CreatedAt
 	}
 	if update.AdditionalProperties != nil {

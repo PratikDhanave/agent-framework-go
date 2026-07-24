@@ -309,6 +309,34 @@ func TestResponse_Update_CreatedAt_EpochZeroIgnored(t *testing.T) {
 	}
 }
 
+func TestResponse_Update_CreatedAt_PreexistingEpochZeroReplaced(t *testing.T) {
+	// A Response/Message may already carry an epoch-zero CreatedAt (e.g. loaded
+	// from older data or JSON). Because epoch-zero is treated as unset, a later
+	// valid timestamp must still be allowed to replace it.
+	resp := &agent.Response{
+		CreatedAt: time.Unix(0, 0),
+		Messages: []*message.Message{{
+			ID:        "msg1",
+			CreatedAt: time.Unix(0, 0),
+			Contents:  message.Contents{&message.TextContent{Text: "First"}},
+		}},
+	}
+
+	valid := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	resp.Update(&agent.ResponseUpdate{
+		MessageID: "msg1",
+		CreatedAt: valid,
+		Contents:  message.Contents{&message.TextContent{Text: "Second"}},
+	})
+
+	if !resp.Messages[0].CreatedAt.Equal(valid) {
+		t.Errorf("expected message CreatedAt %v, got %v", valid, resp.Messages[0].CreatedAt)
+	}
+	if !resp.CreatedAt.Equal(valid) {
+		t.Errorf("expected response CreatedAt %v, got %v", valid, resp.CreatedAt)
+	}
+}
+
 func TestResponse_Update_ContinuationToken(t *testing.T) {
 	resp := &agent.Response{}
 
