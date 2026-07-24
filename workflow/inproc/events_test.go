@@ -5,6 +5,7 @@ package inproc_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"reflect"
 	"slices"
@@ -185,7 +186,10 @@ func askOnceBinding(id string) workflow.ExecutorBinding {
 					}).
 					AddHandlerRaw(reflect.TypeFor[*workflow.ExternalResponse](), nil, func(wctx *workflow.Context, msg any) (any, error) {
 						resp := msg.(*workflow.ExternalResponse)
-						data, _ := resp.Data.As(port.Response)
+						data, ok := resp.Data.As(port.Response)
+						if !ok {
+							return nil, fmt.Errorf("response data is not %v", port.Response)
+						}
 						return nil, wctx.YieldOutput(data)
 					})
 				return rb, nil
@@ -234,7 +238,8 @@ func TestStartedEvent_EmittedPerContinuationCycle(t *testing.T) {
 				t.Fatalf("Build: %v", err)
 			}
 
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 			stream, err := tc.env.RunStreaming(ctx, wf, "kick")
 			if err != nil {
 				t.Fatalf("RunStreaming: %v", err)

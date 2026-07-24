@@ -556,6 +556,12 @@ func (l *lockstepRunEventStream) TakeEventStream(ctx context.Context, blockOnPen
 				// event is drained and yielded before the cycle's supersteps.
 				if l.stepRunner.HasUnprocessedMessages() {
 					l.eventQueue.Enqueue(workflow.StartedEvent{})
+					// Drain immediately so the StartedEvent is yielded before the
+					// cycle's supersteps run, rather than being held in the queue
+					// and drained alongside the first superstep's events.
+					if !l.drainAndFilterEvents(linkedCtx, yield) {
+						return
+					}
 				}
 			} else {
 				// No more work to do
