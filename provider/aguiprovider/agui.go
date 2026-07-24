@@ -373,6 +373,10 @@ type pendingToolCall struct {
 
 type toolCallAccumulator struct {
 	pending map[string]*pendingToolCall
+	// lastChunkMessageID is the MessageID of the most recent
+	// TextMessageChunkEvent that carried one. Chunks that omit MessageID
+	// continue that message.
+	lastChunkMessageID string
 }
 
 func (a *toolCallAccumulator) onEvent(evt aguiEvents.Event) ([]*agent.ResponseUpdate, error) {
@@ -420,9 +424,16 @@ func (a *toolCallAccumulator) onEvent(evt aguiEvents.Event) ([]*agent.ResponseUp
 		if delta == "" {
 			return nil, nil
 		}
+		// A chunk may omit MessageID to continue the current text message.
+		// Reuse the last seen chunk MessageID so the collector groups the
+		// delta with its message instead of merging it into an unrelated
+		// last message (see agent.Response.targetMessage).
+		if id := deref(e.MessageID); id != "" {
+			a.lastChunkMessageID = id
+		}
 		return []*agent.ResponseUpdate{{
 			Role:      message.RoleAssistant,
-			MessageID: deref(e.MessageID),
+			MessageID: a.lastChunkMessageID,
 			CreatedAt: eventTime(evt),
 			Contents:  message.Contents{&message.TextContent{Text: delta}},
 		}}, nil
