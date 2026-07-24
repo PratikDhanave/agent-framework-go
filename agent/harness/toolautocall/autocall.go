@@ -338,22 +338,31 @@ func (f *autocall) Run(next agent.RunFunc, ctx context.Context, messages []*mess
 
 			// Coalesce the buffered updates for this iteration so streamed text/reasoning
 			// fragments merge, then carry the text and reasoning over alongside the
-			// processed (non-informational) function calls, preserving the natural
-			// assistant order of reasoning → text → tool_calls.
+			// processed (non-informational) function calls, preserving the exact
+			// assistant content order the model emitted (e.g. reasoning → text →
+			// tool_calls, or text following a tool_call).
+			processedFCCSet := make(map[*message.FunctionCallContent]struct{}, len(processedFunctionCalls))
+			for _, fcc := range processedFunctionCalls {
+				processedFCCSet[fcc] = struct{}{}
+			}
 			var iterationContents []message.Content
 			for _, u := range updates {
 				iterationContents = append(iterationContents, u.Contents...)
 			}
 			iterationContents = message.CoalesceContents(iterationContents)
-			assistantContents := make([]message.Content, 0, len(iterationContents)+len(processedFunctionCalls))
+			assistantContents := make([]message.Content, 0, len(iterationContents))
 			for _, c := range iterationContents {
-				switch c.(type) {
+				switch v := c.(type) {
 				case *message.TextContent, *message.TextReasoningContent:
 					assistantContents = append(assistantContents, c)
+				case *message.FunctionCallContent:
+					// Only carry over the non-informational function calls that were
+					// actually processed this iteration, keeping them in their original
+					// position relative to the surrounding text/reasoning.
+					if _, ok := processedFCCSet[v]; ok {
+						assistantContents = append(assistantContents, c)
+					}
 				}
-			}
-			for _, fcc := range processedFunctionCalls {
-				assistantContents = append(assistantContents, fcc)
 			}
 
 			// Use the augmented history as the new set of messages to send.
