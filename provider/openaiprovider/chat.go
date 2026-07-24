@@ -542,7 +542,7 @@ func dataContentPart(c *message.DataContent) openai.ChatCompletionContentPartUni
 		})
 	default:
 		return openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
-			FileData: openai.String(c.Data),
+			FileData: openai.String(c.URI()),
 			Filename: openai.String(c.Name),
 		})
 	}

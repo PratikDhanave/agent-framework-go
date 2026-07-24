@@ -1388,7 +1388,7 @@ func TestChatURIContentMessage_DataURI_NonStreaming(t *testing.T) {
                     {
                       "type": "file",
                       "file": {
-                        "file_data": "JVBERg==",
+                        "file_data": "data:application/pdf;base64,JVBERg==",
                         "filename": ""
                       }
                     }
