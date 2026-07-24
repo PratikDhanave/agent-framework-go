@@ -16,7 +16,7 @@ import (
 	"github.com/microsoft/agent-framework-go/workflow/inproc"
 )
 
-var logger = demo.NewLogger(
+var _ = demo.NewLogger(
 	"Concurrent Workflow With Custom Aggregator",
 	"This sample fans a prompt out to several domain experts and folds their answers into a single summary message using a custom fan-in aggregator.",
 	"Model", demo.FoundryModel,
@@ -66,7 +66,9 @@ func summarize(_ context.Context, batches [][]*message.Message) []*message.Messa
 		last := batch[len(batch)-1]
 		fmt.Fprintf(&b, "\n- %s", last.String())
 	}
-	return []*message.Message{message.NewText(b.String())}
+	summary := message.NewText(b.String())
+	summary.Role = message.RoleAssistant
+	return []*message.Message{summary}
 }
 
 func runWorkflow(ctx context.Context, wf *workflow.Workflow, messages []*message.Message) ([]*message.Message, error) {
@@ -96,7 +98,7 @@ func runWorkflow(ctx context.Context, wf *workflow.Workflow, messages []*message
 			return nil, fmt.Errorf("executor %q failed: %v", e.ExecutorID, e.Error)
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("workflow stream ended without producing an output event")
 }
 
 func newExpertAgent(name, domain string) *agent.Agent {
@@ -107,8 +109,7 @@ func newExpertAgent(name, domain string) *agent.Agent {
 		foundryprovider.AgentConfig{
 			Instructions: fmt.Sprintf("You are a %s expert. Answer the question from a %s point of view in a single concise sentence.", domain, domain),
 			Config: agent.Config{
-				Name:        name,
-				Middlewares: []agent.Middleware{logger},
+				Name: name,
 			},
 		},
 	)
