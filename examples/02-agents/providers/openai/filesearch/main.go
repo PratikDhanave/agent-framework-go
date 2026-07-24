@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/microsoft/agent-framework-go/agent"
 	"github.com/microsoft/agent-framework-go/examples/internal/demo"
@@ -20,7 +21,7 @@ import (
 // export its identifier before running this example:
 //
 //	export VECTOR_STORE_ID=vs_...
-var vectorStoreID = os.Getenv("VECTOR_STORE_ID")
+var vectorStoreID = strings.TrimSpace(os.Getenv("VECTOR_STORE_ID"))
 
 var logger = demo.NewLogger(
 	"OpenAI File Search",
