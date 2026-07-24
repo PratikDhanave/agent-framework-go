@@ -155,7 +155,11 @@ func expenseSubmitter(id string, port workflow.RequestPort) workflow.ExecutorBin
 						return nil, ctx.PostRequest(req)
 					}).
 					AddHandlerRaw(reflect.TypeFor[*workflow.ExternalResponse](), nil, func(ctx *workflow.Context, msg any) (any, error) {
-						approved, _ := workflow.PortableValueAs[bool](msg.(*workflow.ExternalResponse).Data)
+						data := msg.(*workflow.ExternalResponse).Data
+						approved, ok := workflow.PortableValueAs[bool](data)
+						if !ok {
+							return nil, fmt.Errorf("expenseSubmitter: expected bool approval response, got %v", data)
+						}
 						return nil, ctx.YieldOutput(approved)
 					})
 				return pb, nil

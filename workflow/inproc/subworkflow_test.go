@@ -169,7 +169,11 @@ func TestSubworkflowBinding_ParentInterceptsChildRequestLocally(t *testing.T) {
 							return nil, ctx.PostRequest(req)
 						}).
 						AddHandlerRaw(reflect.TypeFor[*workflow.ExternalResponse](), nil, func(ctx *workflow.Context, msg any) (any, error) {
-							approved, _ := workflow.PortableValueAs[bool](msg.(*workflow.ExternalResponse).Data)
+							data := msg.(*workflow.ExternalResponse).Data
+							approved, ok := workflow.PortableValueAs[bool](data)
+							if !ok {
+								return nil, fmt.Errorf("approve response: expected bool, got %v", data)
+							}
 							return nil, ctx.YieldOutput(approved)
 						})
 					return pb, nil
@@ -202,7 +206,10 @@ func TestSubworkflowBinding_ParentInterceptsChildRequestLocally(t *testing.T) {
 						if !ok {
 							return nil, nil
 						}
-						amount, _ := workflow.PortableValueAs[int](req.Data)
+						amount, ok := workflow.PortableValueAs[int](req.Data)
+						if !ok {
+							return nil, fmt.Errorf("gate request: expected int, got %v", req.Data)
+						}
 						if amount <= threshold {
 							response, err := req.CreateResponse(true)
 							if err != nil {
