@@ -233,6 +233,30 @@ func TestRun_SurfacesLifecycleEventEmittedDuringSessionResume(t *testing.T) {
 	}
 }
 
+func TestRun_PreservesUserSuppliedOnEventHandler(t *testing.T) {
+	runtime := newFakeRuntime(t, idleEvent())
+	var mu sync.Mutex
+	invocations := 0
+	userHandler := func(event copilot.SessionEvent) {
+		mu.Lock()
+		invocations++
+		mu.Unlock()
+	}
+	agent := copilotprovider.NewAgent(runtime.client(), copilotprovider.AgentConfig{
+		SessionConfig: &copilot.SessionConfig{OnEvent: userHandler},
+	})
+
+	if _, err := runText(t, agent, "hello"); err != nil {
+		t.Fatalf("RunText: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if invocations == 0 {
+		t.Fatal("user-supplied SessionConfig.OnEvent was overwritten by the per-run handler and never invoked")
+	}
+}
+
 func hasRawEventOfType(response *agentpkg.Response, eventType string) bool {
 	for content := range response.Contents() {
 		raw, ok := content.(*message.RawContent)

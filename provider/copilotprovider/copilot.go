@@ -238,7 +238,7 @@ func (p *provider) openSession(
 func (p *provider) sessionConfig(streaming bool, eventHandler copilot.SessionEventHandler, options []agent.Option) copilot.SessionConfig {
 	cfg := copySessionConfig(p.cfg.SessionConfig)
 	cfg.Streaming = copilot.Bool(streaming)
-	cfg.OnEvent = eventHandler
+	cfg.OnEvent = chainSessionEventHandlers(cfg.OnEvent, eventHandler)
 	cfg.SystemMessage = systemMessageWithInstructions(cfg.SystemMessage, slices.Collect(agent.AllOptions(options, agent.WithInstructions)))
 	cfg.Tools = append(cfg.Tools, copilotTools(options)...)
 	return cfg
@@ -247,7 +247,7 @@ func (p *provider) sessionConfig(streaming bool, eventHandler copilot.SessionEve
 func (p *provider) resumeSessionConfig(streaming bool, eventHandler copilot.SessionEventHandler, options []agent.Option) copilot.ResumeSessionConfig {
 	cfg := copyResumeSessionConfig(p.cfg.SessionConfig)
 	cfg.Streaming = copilot.Bool(streaming)
-	cfg.OnEvent = eventHandler
+	cfg.OnEvent = chainSessionEventHandlers(cfg.OnEvent, eventHandler)
 	cfg.SystemMessage = systemMessageWithInstructions(cfg.SystemMessage, slices.Collect(agent.AllOptions(options, agent.WithInstructions)))
 	cfg.Tools = append(cfg.Tools, copilotTools(options)...)
 	return cfg
@@ -274,6 +274,7 @@ func copyResumeSessionConfig(source *copilot.SessionConfig) copilot.ResumeSessio
 		AvailableTools:      source.AvailableTools,
 		ExcludedTools:       source.ExcludedTools,
 		Provider:            source.Provider,
+		OnEvent:             source.OnEvent,
 		OnPermissionRequest: source.OnPermissionRequest,
 		OnUserInputRequest:  source.OnUserInputRequest,
 		Hooks:               source.Hooks,
@@ -285,6 +286,23 @@ func copyResumeSessionConfig(source *copilot.SessionConfig) copilot.ResumeSessio
 		DisabledSkills:      source.DisabledSkills,
 		InfiniteSessions:    source.InfiniteSessions,
 		Streaming:           copyBoolDefaultTrue(source.Streaming),
+	}
+}
+
+// chainSessionEventHandlers composes a caller-supplied handler with the
+// per-run handler so a user-configured SessionConfig.OnEvent is preserved
+// and runs alongside (before) the provider's per-run handler rather than
+// being overwritten.
+func chainSessionEventHandlers(existing, added copilot.SessionEventHandler) copilot.SessionEventHandler {
+	if existing == nil {
+		return added
+	}
+	if added == nil {
+		return existing
+	}
+	return func(event copilot.SessionEvent) {
+		existing(event)
+		added(event)
 	}
 }
 
