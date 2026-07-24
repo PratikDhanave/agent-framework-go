@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	observability "github.com/microsoft/agent-framework-go/workflow/internal/observability"
@@ -35,8 +36,10 @@ func TestErrorAttributesShortTypeName(t *testing.T) {
 
 	wrapped := fmt.Errorf("ctx: %w", errors.New("boom"))
 	attrs = observability.ErrorAttributes(wrapped)
-	if got := attributeValue(t, attrs, observability.TagErrorType); got != "wrapError" {
-		t.Errorf("wrapped error.type = %q, want %q", got, "wrapError")
+	// Assert the observable requirement (unqualified/short type name) rather than a
+	// specific stdlib-internal type name, which is not a public API and may change.
+	if got := attributeValue(t, attrs, observability.TagErrorType); got == "" || strings.ContainsAny(got, ".*") {
+		t.Errorf("wrapped error.type = %q, want unqualified short type name", got)
 	}
 }
 
@@ -48,8 +51,10 @@ func TestBuildErrorAttributesShortTypeName(t *testing.T) {
 
 	wrapped := fmt.Errorf("ctx: %w", errors.New("boom"))
 	attrs = observability.BuildErrorAttributes(wrapped)
-	if got := attributeValue(t, attrs, observability.TagBuildErrorType); got != "wrapError" {
-		t.Errorf("wrapped build.error.type = %q, want %q", got, "wrapError")
+	// Assert the observable requirement (unqualified/short type name) rather than a
+	// specific stdlib-internal type name, which is not a public API and may change.
+	if got := attributeValue(t, attrs, observability.TagBuildErrorType); got == "" || strings.ContainsAny(got, ".*") {
+		t.Errorf("wrapped build.error.type = %q, want unqualified short type name", got)
 	}
 }
 
@@ -78,7 +83,7 @@ func TestCaptureErrorShortTypeName(t *testing.T) {
 	span := &fakeSpan{}
 	telemetry := observability.New(observability.Options{Tracer: &fakeTracer{span: span}})
 
-	_, activity := telemetry.StartWorkflowRun(context.Background(), observability.WorkflowMetadata{ID: "wf"})
+	_, activity := telemetry.StartWorkflowRun(t.Context(), observability.WorkflowMetadata{ID: "wf"})
 	activity.CaptureError(errors.New("boom"))
 
 	if got := attributeValue(t, span.attrs, observability.TagErrorType); got != "errorString" {
