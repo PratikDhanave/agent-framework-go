@@ -2300,7 +2300,8 @@ func TestResponsesCodeInterpreterTool_NonStreaming(t *testing.T) {
                 "tools":[{
                     "type":"code_interpreter",
                     "container":{"type":"auto"}
-                }]
+                }],
+                "include":["code_interpreter_call.outputs"]
             }
             `
 
@@ -2419,6 +2420,7 @@ func TestResponsesCodeInterpreterTool_Streaming(t *testing.T) {
                 "model":"gpt-4o-mini",
                 "input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Calculate 3+3"}]}],
                 "tools":[{"type":"code_interpreter","container":{"type":"auto"}}],
+                "include":["code_interpreter_call.outputs"],
                 "stream":true
             }
             `
@@ -2481,6 +2483,59 @@ data: {"type":"response.completed","response":{"id":"resp_002","object":"respons
 	}
 	if !strings.Contains(responseText, "6") {
 		t.Errorf("expected response to contain output '6', got %q", responseText)
+	}
+}
+
+func TestResponsesCodeInterpreterTool_IncludeNotDuplicatedWhenCallerSupplied(t *testing.T) {
+	// The caller already requested code_interpreter_call.outputs; the builder must not
+	// append a second copy of the same include value.
+	const input = `
+            {
+                "model":"gpt-4o-mini",
+                "input":[{
+                    "type":"message",
+                    "role":"user",
+                    "content":[{"type":"input_text","text":"Calculate the sum of numbers from 1 to 5"}]
+                }],
+                "tools":[{
+                    "type":"code_interpreter",
+                    "container":{"type":"auto"}
+                }],
+                "include":["code_interpreter_call.outputs"]
+            }
+            `
+
+	const output = `
+            {
+              "id":"resp_dedup",
+              "object":"response",
+              "created_at":1761309813,
+              "status":"completed",
+              "model":"gpt-4o-mini",
+              "output":[{
+                "id":"msg_dedup",
+                "type":"message",
+                "status":"completed",
+                "content":[{"type":"output_text","annotations":[],"text":"15"}],
+                "role":"assistant"
+              }],
+              "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+            }
+            `
+
+	server := newTestResponsesServer(t, input, output)
+	defer server.Close()
+
+	a := newTestResponsesClient(server, "gpt-4o-mini")
+
+	_, err := a.RunText(t.Context(), "Calculate the sum of numbers from 1 to 5",
+		agent.WithTool(&hostedtool.CodeInterpreter{}),
+		openaiprovider.ResponsesNewParams(responses.ResponseNewParams{
+			Include: []responses.ResponseIncludable{responses.ResponseIncludableCodeInterpreterCallOutputs},
+		}),
+	).Collect()
+	if err != nil {
+		t.Fatalf("error = %v", err)
 	}
 }
 
