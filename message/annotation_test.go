@@ -86,6 +86,20 @@ func TestAnnotationEncoding_UnknownTypesPreservedAsRaw(t *testing.T) {
 	}
 }
 
+func TestAnnotationEncoding_KnownTypeInvalidPayloadReturnsError(t *testing.T) {
+	// A known discriminator ("citation") with a payload that does not match the
+	// structured type must surface a decode error rather than being silently
+	// downgraded to a RawAnnotation.
+	if err := json.Unmarshal([]byte(`[{"Type":"citation","URL":123}]`), new(message.Annotations)); err == nil {
+		t.Fatal("expected error decoding known annotation with invalid payload, got nil")
+	}
+
+	// Likewise for a known annotated region type ("text_span").
+	if err := json.Unmarshal([]byte(`[{"Type":"text_span","Start":"nope"}]`), new(message.AnnotatedRegions)); err == nil {
+		t.Fatal("expected error decoding known region with invalid payload, got nil")
+	}
+}
+
 func TestAnnotatedRegionEncoding_Roundtrip(t *testing.T) {
 	regions := message.AnnotatedRegions{
 		&message.TextSpanAnnotatedRegion{
