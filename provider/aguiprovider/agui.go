@@ -479,6 +479,17 @@ func (a *toolCallAccumulator) onEvent(evt aguiEvents.Event) ([]*agent.ResponseUp
 			CreatedAt: eventTime(evt),
 			Contents:  message.Contents{newJSONDataContent(e.Delta, "application/json-patch+json")},
 		}}, nil
+	case *aguiEvents.CustomEvent:
+		return []*agent.ResponseUpdate{{
+			Role:      message.RoleAssistant,
+			CreatedAt: eventTime(evt),
+			AdditionalProperties: map[string]any{
+				"agui_custom_event": map[string]any{
+					"name":  e.Name,
+					"value": e.Value,
+				},
+			},
+		}}, nil
 	default:
 		return nil, nil
 	}

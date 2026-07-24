@@ -281,6 +281,52 @@ func TestAGUIAgentRun_MapsReasoningEvents(t *testing.T) {
 	}
 }
 
+func TestAGUIAgentRun_SurfacesCustomEventAsMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input aguiTypes.RunAgentInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeSSE(t, w, aguiEvents.NewRunStartedEvent(input.ThreadID, input.RunID))
+		writeSSE(t, w, aguiEvents.NewCustomEvent("predictive_state", aguiEvents.WithValue(map[string]any{"foo": "bar"})))
+		writeSSE(t, w, aguiEvents.NewRunFinishedEvent(input.ThreadID, input.RunID))
+	}))
+	defer server.Close()
+
+	a := aguiprovider.NewAgent(newTestClient(server.URL), aguiprovider.AgentConfig{})
+	resp, err := a.Run(context.Background(), []*message.Message{message.NewText("hi")}).Collect()
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+
+	var custom map[string]any
+	for _, msg := range resp.Messages {
+		if v, ok := msg.AdditionalProperties["agui_custom_event"]; ok {
+			m, ok := v.(map[string]any)
+			if !ok {
+				t.Fatalf("agui_custom_event = %T, want map[string]any", v)
+			}
+			custom = m
+			break
+		}
+	}
+	if custom == nil {
+		t.Fatal("expected an update carrying agui_custom_event metadata")
+	}
+	if custom["name"] != "predictive_state" {
+		t.Errorf("custom event name = %v, want %q", custom["name"], "predictive_state")
+	}
+	value, ok := custom["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("custom event value = %T, want map[string]any", custom["value"])
+	}
+	if value["foo"] != "bar" {
+		t.Errorf("custom event value[foo] = %v, want %q", value["foo"], "bar")
+	}
+}
+
 func TestAGUIAgentRun_InvokesTools_WhenFunctionCallsReturned(t *testing.T) {
 	var mu sync.Mutex
 	requestCount := 0
