@@ -423,9 +423,13 @@ func (t *FunctionResultContent) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		t.Result = r
+	} else {
+		t.Result = nil
 	}
 	if tmp.Error != "" {
 		t.Error = errors.New(tmp.Error)
+	} else {
+		t.Error = nil
 	}
 	return nil
 }

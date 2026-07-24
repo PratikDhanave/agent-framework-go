@@ -222,6 +222,29 @@ func TestFunctionResultContentRoundtripPreservesResult(t *testing.T) {
 	}
 }
 
+func TestFunctionResultContentUnmarshalResetsStaleFields(t *testing.T) {
+	// Unmarshaling into a non-zero receiver must clear previously set Result
+	// and Error when the incoming JSON omits them, matching standard JSON
+	// unmarshal semantics.
+	decoded := message.FunctionResultContent{
+		CallID: "old",
+		Result: "stale",
+		Error:  errors.New("stale error"),
+	}
+	if err := json.Unmarshal([]byte(`{"Type":"functionResult","CallID":"new"}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Result != nil {
+		t.Fatalf("Result = %v, want nil", decoded.Result)
+	}
+	if decoded.Error != nil {
+		t.Fatalf("Error = %v, want nil", decoded.Error)
+	}
+	if decoded.CallID != "new" {
+		t.Fatalf("CallID = %q, want %q", decoded.CallID, "new")
+	}
+}
+
 func TestDataContentUnmarshalDefaultsMissingMediaType(t *testing.T) {
 	var content message.DataContent
 	if err := json.Unmarshal([]byte(`{"Type":"data","URI":"data:,hello%20world+literal"}`), &content); err != nil {
