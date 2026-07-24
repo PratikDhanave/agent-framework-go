@@ -2106,6 +2106,36 @@ func TestResponsesMCPServerRequireApproval(t *testing.T) {
                 `,
 		},
 		{
+			name: "only always list",
+			tool: &hostedtool.MCPServer{
+				ServerName:            "github",
+				ServerAddress:         "https://example.com/mcp",
+				AlwaysRequireApproval: []string{"create_issue"},
+			},
+			input: `
+                {
+                    "model":"gpt-4o-mini",
+                    "input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"test"}]}],
+                    "tools":[{"type":"mcp","server_label":"github","server_url":"https://example.com/mcp","require_approval":{"always":{"tool_names":["create_issue"]}}}]
+                }
+                `,
+		},
+		{
+			name: "only never list",
+			tool: &hostedtool.MCPServer{
+				ServerName:           "github",
+				ServerAddress:        "https://example.com/mcp",
+				NeverRequireApproval: []string{"list_issues"},
+			},
+			input: `
+                {
+                    "model":"gpt-4o-mini",
+                    "input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"test"}]}],
+                    "tools":[{"type":"mcp","server_label":"github","server_url":"https://example.com/mcp","require_approval":{"never":{"tool_names":["list_issues"]}}}]
+                }
+                `,
+		},
+		{
 			name: "zero value omits require_approval",
 			tool: &hostedtool.MCPServer{
 				ServerName:    "github",

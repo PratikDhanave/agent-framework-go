@@ -80,7 +80,7 @@ type MCPServer struct {
 	// An empty value leaves the service default in effect.
 	//
 	// ApprovalMode is ignored when AlwaysRequireApproval or NeverRequireApproval
-	// is set, which express per-tool approval requirements instead.
+	// is non-empty, which express per-tool approval requirements instead.
 	ApprovalMode string
 	// AlwaysRequireApproval lists tool names that always require approval.
 	AlwaysRequireApproval []string

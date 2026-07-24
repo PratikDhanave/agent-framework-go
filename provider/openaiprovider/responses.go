@@ -436,6 +436,9 @@ func responsesBuildCompletionParams(config AgentConfig, messages []*message.Mess
 					},
 				}
 			} else if tl.ApprovalMode != "" {
+				if tl.ApprovalMode != "always" && tl.ApprovalMode != "never" {
+					return responses.ResponseNewParams{}, fmt.Errorf("invalid MCP ApprovalMode %q: must be \"always\" or \"never\"", tl.ApprovalMode)
+				}
 				variant.RequireApproval.OfMcpToolApprovalSetting = openai.String(tl.ApprovalMode)
 			}
 			params.Tools = append(params.Tools, responses.ToolUnionParam{
