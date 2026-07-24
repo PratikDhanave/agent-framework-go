@@ -413,8 +413,8 @@ func TestRunAllowBackgroundResponsesSetsReturnImmediately(t *testing.T) {
 		if transport.capturedMessageSendParams == nil {
 			t.Fatal("capturedMessageSendParams is nil")
 		}
-		if cfg := transport.capturedMessageSendParams.Config; cfg != nil && cfg.ReturnImmediately {
-			t.Error("Config.ReturnImmediately = true, want false")
+		if cfg := transport.capturedMessageSendParams.Config; cfg != nil {
+			t.Errorf("Config = %+v, want nil to preserve the default wire request", cfg)
 		}
 	})
 }
