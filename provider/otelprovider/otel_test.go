@@ -160,6 +160,40 @@ func TestOtel_Run_SpanNamePrefixedWithOperation(t *testing.T) {
 	}
 }
 
+func TestOtel_Run_SpanNameFallsBackToAgentID(t *testing.T) {
+	exporter := setupTracer(t)
+
+	mw := otelprovider.NewMiddleware(otelprovider.MiddlewareConfig{})
+	// Agent with an id but no name: the span target falls back to the agent id,
+	// matching .NET/Python.
+	a := agent.New(agent.ProviderConfig{
+		Run: func(ctx context.Context, messages []*message.Message, options ...agent.Option) iter.Seq2[*agent.ResponseUpdate, error] {
+			return func(yield func(*agent.ResponseUpdate, error) bool) {
+				yield(&agent.ResponseUpdate{MessageID: "test-1"}, nil)
+			}
+		},
+	}, agent.Config{
+		ID:          "agent-123",
+		Middlewares: []agent.Middleware{mw},
+	})
+
+	_, _ = a.RunMessage(t.Context(), message.NewText("test")).Collect()
+
+	spans := exporter.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	// With no name, the target is the agent id.
+	if spans[0].Name != "invoke_agent agent-123" {
+		t.Errorf("expected span name %q, got %q", "invoke_agent agent-123", spans[0].Name)
+	}
+	for _, attr := range spans[0].Attributes {
+		if string(attr.Key) == "gen_ai.agent.id" && attr.Value.AsString() != "agent-123" {
+			t.Errorf("expected gen_ai.agent.id %q, got %q", "agent-123", attr.Value.AsString())
+		}
+	}
+}
+
 func TestOtel_Run_OmitsEmptyAgentNameAndDescription(t *testing.T) {
 	exporter := setupTracer(t)
 
