@@ -211,14 +211,14 @@ func (c *Context) StartWorkflowRun(ctx context.Context, metadata WorkflowMetadat
 	return ctx, span
 }
 
-func (c *Context) StartExecutorProcess(ctx context.Context, executorID, implementationID, messageType string, message any, traceContext map[string]string) (context.Context, *Activity) {
+func (c *Context) StartExecutorProcess(ctx context.Context, executorID, executorType, messageType string, message any, traceContext map[string]string) (context.Context, *Activity) {
 	if !c.activityEnabled(c.optionsOrZero().DisableExecutorProcess) {
 		return ctx, nil
 	}
 	ctx, span := c.start(ctx, ActivityExecutorProcess+" "+executorID, workflowobservability.SpanOptions{SourceTraceContext: traceContext})
 	span.SetAttributes(
 		workflowobservability.StringAttribute(TagExecutorID, executorID),
-		workflowobservability.StringAttribute(TagExecutorType, implementationID),
+		workflowobservability.StringAttribute(TagExecutorType, executorType),
 		workflowobservability.StringAttribute(TagMessageType, messageType),
 	)
 	if c.optionsOrZero().EnableSensitiveData {
