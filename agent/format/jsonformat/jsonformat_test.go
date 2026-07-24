@@ -50,8 +50,8 @@ type Nested struct {
 	Items []Struct `json:"items,omitempty"`
 }
 
-// requiredKeys returns the "required" and "properties" key sets of the object
-// schema at path (a sequence of property names to descend through).
+// objectSchema returns the object schema reached by descending through path (a
+// sequence of property names), stepping into array item schemas along the way.
 func objectSchema(t *testing.T, format agent.ResponseFormat, path ...string) *jsonschema.Schema {
 	t.Helper()
 	s, ok := format.Schema.(*jsonschema.Schema)

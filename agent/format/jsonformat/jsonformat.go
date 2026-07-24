@@ -174,7 +174,9 @@ func cloneSchema(s *jsonschema.Schema) (*jsonschema.Schema, error) {
 }
 
 // makeNullable marks s as accepting the JSON null value in addition to its
-// existing type(s), so an optional property can be omitted by returning null.
+// existing type(s). In a strict schema every property stays required, so an
+// originally optional property signals "no value" by being null rather than by
+// being omitted.
 func makeNullable(s *jsonschema.Schema) {
 	if s == nil || isNullable(s) {
 		return
