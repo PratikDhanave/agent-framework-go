@@ -243,9 +243,15 @@ func (a *client) buildParams(messages []*message.Message, opts []agent.Option) (
 		}
 		// Merge into any caller-supplied ToolConfig (e.g. a RetrievalConfig for
 		// Vertex grounding passed through GenerateContentConfig) rather than
-		// replacing it, so only the function-calling mode is overridden.
+		// replacing it, so only the function-calling mode is overridden. Shallow-
+		// clone the struct first so overriding FunctionCallingConfig preserves the
+		// caller's other fields without mutating their ToolConfig pointer (which is
+		// aliased via the shallow *cfg = p copy above).
 		if cfg.ToolConfig == nil {
 			cfg.ToolConfig = &genai.ToolConfig{}
+		} else {
+			tc := *cfg.ToolConfig
+			cfg.ToolConfig = &tc
 		}
 		cfg.ToolConfig.FunctionCallingConfig = fc
 	}
