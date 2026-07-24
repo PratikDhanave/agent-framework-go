@@ -18,6 +18,7 @@ import (
 	"github.com/microsoft/agent-framework-go/agent/harness/toolautocall"
 	"github.com/microsoft/agent-framework-go/message"
 	"github.com/microsoft/agent-framework-go/tool"
+	"github.com/microsoft/agent-framework-go/tool/hostedtool"
 	"google.golang.org/genai"
 )
 
@@ -195,19 +196,40 @@ func (a *client) buildParams(messages []*message.Message, opts []agent.Option) (
 		appendSystemInstruction(cfg, strings.Join(instructions, "\n"))
 	}
 
-	// Collect tools from options.
+	// Collect tools from options. Function tools are aggregated into a single
+	// genai.Tool holding all FunctionDeclarations, while each hosted tool maps
+	// onto its own genai.Tool entry (Gemini does not allow combining native
+	// tools with function declarations in a single Tool). This mirrors the
+	// hosted-tool mapping already performed by the openaiprovider.
 	var funcDecls []*genai.FunctionDeclaration
 	for tl := range agent.AllOptions(opts, agent.WithTool) {
-		if ft, ok := tl.(tool.FuncTool); ok {
-			decl := &genai.FunctionDeclaration{
-				Name:        ft.Name(),
-				Description: ft.Description(),
+		switch tl := tl.(type) {
+		case *hostedtool.WebSearch:
+			cfg.Tools = append(cfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
+		case *hostedtool.CodeInterpreter:
+			cfg.Tools = append(cfg.Tools, &genai.Tool{CodeExecution: &genai.ToolCodeExecution{}})
+		case *hostedtool.FileSearch:
+			fs := &genai.FileSearch{}
+			for _, input := range tl.Inputs {
+				if hosted, ok := input.(*message.HostedVectorStoreContent); ok {
+					fs.FileSearchStoreNames = append(fs.FileSearchStoreNames, hosted.VectorStoreID)
+				}
 			}
-			if schema := ft.Schema(); schema != nil {
+			if tl.MaximumResultCount != 0 {
+				topK := int32(tl.MaximumResultCount)
+				fs.TopK = &topK
+			}
+			cfg.Tools = append(cfg.Tools, &genai.Tool{FileSearch: fs})
+		case tool.FuncTool:
+			decl := &genai.FunctionDeclaration{
+				Name:        tl.Name(),
+				Description: tl.Description(),
+			}
+			if schema := tl.Schema(); schema != nil {
 				// Use ParametersJsonSchema to pass through the JSON schema directly.
 				decl.ParametersJsonSchema = schema
 			}
-			if schema := ft.ReturnSchema(); schema != nil {
+			if schema := tl.ReturnSchema(); schema != nil {
 				decl.ResponseJsonSchema = schema
 			}
 			funcDecls = append(funcDecls, decl)
