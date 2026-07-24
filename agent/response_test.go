@@ -788,3 +788,28 @@ func TestResponse_ToUpdates_WithAdditionalPropertiesOnlyProducesSingleUpdate(t *
 		t.Errorf("expected key value, got %v", updates[0].AdditionalProperties["key"])
 	}
 }
+
+func TestResponse_ToUpdates_PropagatesContinuationToken(t *testing.T) {
+	resp := &agent.Response{
+		ContinuationToken: "tok-123",
+		Messages: []*message.Message{
+			{
+				Role:     message.RoleAssistant,
+				Contents: message.Contents{&message.TextContent{Text: "Text"}},
+			},
+		},
+	}
+
+	updates := resp.ToUpdates()
+
+	// The token must survive a ToUpdates/Collect round-trip.
+	var roundTripped agent.Response
+	for _, update := range updates {
+		roundTripped.Update(update)
+	}
+	roundTripped.Coalesce()
+
+	if roundTripped.ContinuationToken != "tok-123" {
+		t.Errorf("expected ContinuationToken tok-123, got %q", roundTripped.ContinuationToken)
+	}
+}

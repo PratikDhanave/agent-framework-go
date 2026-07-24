@@ -149,11 +149,12 @@ func (resp *Response) ToUpdates() []*ResponseUpdate {
 		})
 	}
 
-	if hasUsage || hasAdditionalProperties {
+	if hasUsage || hasAdditionalProperties || resp.ContinuationToken != "" {
 		extra := &ResponseUpdate{
 			AdditionalProperties: resp.AdditionalProperties,
 			AgentID:              resp.AgentID,
 			ResponseID:           resp.ID,
+			ContinuationToken:    resp.ContinuationToken,
 			CreatedAt:            resp.CreatedAt,
 		}
 		if hasUsage {
