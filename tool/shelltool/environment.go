@@ -131,10 +131,12 @@ func NewEnvironmentProvider(executor Executor, config EnvironmentProviderConfig)
 	return p
 }
 
+// Invoking implements agent.ContextProvider by delegating to the wrapped provider, applying this provider's context/instructions to the invocation.
 func (p *EnvironmentProvider) Invoking(ctx context.Context, invoking agent.InvokingContext) ([]*message.Message, []agent.Option, error) {
 	return p.provider.Invoking(ctx, invoking)
 }
 
+// Invoked implements agent.ContextProvider by delegating to the wrapped provider, persisting post-invocation state.
 func (p *EnvironmentProvider) Invoked(ctx context.Context, invoked agent.InvokedContext) error {
 	return p.provider.Invoked(ctx, invoked)
 }
