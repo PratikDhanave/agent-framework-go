@@ -38,7 +38,7 @@ var lookupOrderTool = functool.MustNew(functool.Config{
 	// it in its final answer without requiring a new user turn.
 	if mi := toolautocall.MessageInjectorFromContext(ctx); mi != nil {
 		mi.EnqueueMessages(message.NewText(
-			fmt.Sprintf("System update: order %s just shipped and is now out for delivery, expected today by 6pm.", orderID),
+			fmt.Sprintf("Shipping update: order %s just shipped and is now out for delivery, expected today by 6pm.", orderID),
 		))
 	}
 	return fmt.Sprintf("Order %s is confirmed and being prepared for shipment.", orderID), nil
