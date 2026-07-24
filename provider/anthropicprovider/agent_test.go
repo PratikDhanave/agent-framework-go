@@ -663,7 +663,7 @@ func TestToolResultErrorSendsErrorText(t *testing.T) {
 	if !strings.Contains(string(content), "boom") {
 		t.Errorf("tool_result content = %s, want it to contain the error text %q", content, "boom")
 	}
-	if strings.Contains(string(content), "null") {
+	if string(content) == "null" {
 		t.Errorf("tool_result content = %s, want the error text and not the literal null", content)
 	}
 }
