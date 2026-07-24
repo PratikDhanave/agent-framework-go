@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
@@ -215,7 +216,10 @@ func (a *client) buildParams(messages []*message.Message, opts []agent.Option) (
 					fs.FileSearchStoreNames = append(fs.FileSearchStoreNames, hosted.VectorStoreID)
 				}
 			}
-			if tl.MaximumResultCount != 0 {
+			// Guard against negative or out-of-range values before the
+			// int32 conversion: negatives would produce an invalid TopK and
+			// large values would overflow on 64-bit platforms.
+			if tl.MaximumResultCount > 0 && tl.MaximumResultCount <= math.MaxInt32 {
 				topK := int32(tl.MaximumResultCount)
 				fs.TopK = &topK
 			}
