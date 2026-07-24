@@ -311,7 +311,7 @@ type MCPServerToolResultContent struct {
 	ContentHeader
 
 	CallID     string
-	Name       string   `json:",omitempty"`
+	Name       string
 	ServerName string   `json:",omitempty"`
 	Outputs    Contents `json:",omitempty"`
 	Error      string   `json:",omitempty"`

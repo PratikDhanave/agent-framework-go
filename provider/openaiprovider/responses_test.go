@@ -2157,6 +2157,7 @@ data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_00
 	defer server.Close()
 
 	a := newTestResponsesClient(server, "gpt-4o-mini")
+	var call *message.MCPServerToolCallContent
 	var result *message.MCPServerToolResultContent
 	var errContent *message.ErrorContent
 	for update, err := range a.RunText(t.Context(), "test", agent.Stream(true)) {
@@ -2165,6 +2166,8 @@ data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_00
 		}
 		for _, content := range update.Contents {
 			switch c := content.(type) {
+			case *message.MCPServerToolCallContent:
+				call = c
 			case *message.MCPServerToolResultContent:
 				result = c
 			case *message.ErrorContent:
@@ -2173,6 +2176,12 @@ data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_00
 		}
 	}
 
+	if call == nil {
+		t.Fatal("expected MCPServerToolCallContent")
+	}
+	if call.CallID != "mcp_123" || call.ServerName != "github" || call.Name != "create_issue" || call.Arguments != `{"title":"Bug"}` {
+		t.Fatalf("call = %#v", call)
+	}
 	if result == nil {
 		t.Fatal("expected MCPServerToolResultContent")
 	}
