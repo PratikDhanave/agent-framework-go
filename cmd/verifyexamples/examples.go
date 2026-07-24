@@ -218,8 +218,7 @@ var agentsExamples = []ExampleDefinition{
 	{
 		Name:                         "02_agents_agents_step13_using_audio_and_files",
 		ProjectPath:                  "examples/02-agents/agents/step13_using_audio_and_files",
-		RequiredEnvironmentVariables: []string{"OPENAI_API_KEY"},
-		OptionalEnvironmentVariables: []string{"OPENAI_MODEL"},
+		RequiredEnvironmentVariables: []string{"OPENAI_API_KEY", "FOUNDRY_PROJECT_ENDPOINT"},
 		ExpectedOutputDescription: []string{
 			"The output should include a transcription (or acknowledgement) of the attached audio clip and a summary of the attached PDF document.",
 			"The summary should reference the document content about an Agent Framework quarterly report.",
