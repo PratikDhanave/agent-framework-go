@@ -201,7 +201,12 @@ func (em *EdgeRunner) PrepareDeliveryForEdge(ctx context.Context, edge workflow.
 	// Unwrap a PortableValue to its declared runtime type before invoking the
 	// caller-supplied Condition and Assigner delegates, so a user predicate like
 	// m.(Order).Total > 100 sees the concrete type rather than the wrapper.
-	message := em.unwrapMessage(ctx, envelope)
+	// Only unwrap when a delegate will actually consume the message; otherwise
+	// avoid the cost (and potential side-effects) of resolving the runtime type.
+	message := envelope.Message
+	if edge.Condition != nil || edge.Assigner != nil {
+		message = em.unwrapMessage(ctx, envelope)
+	}
 	if edge.Condition != nil && !edge.Condition(message) {
 		// Condition not met; do not route message.
 		span.SetDeliveryStatus(observability.DeliveryStatusDroppedConditionFalse)
