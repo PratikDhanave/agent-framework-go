@@ -739,6 +739,8 @@ var workflowExamples = []ExampleDefinition{
 		ProjectPath:                  "examples/03-workflows/agents/workflow_as_an_agent_human_in_the_loop",
 		RequiredEnvironmentVariables: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		OptionalEnvironmentVariables: []string{"FOUNDRY_MODEL"},
+		Inputs:                       inputLines("Y"),
+		InputDelay:                   5 * time.Second,
 		ExpectedOutputDescription: []string{
 			"The output should wrap a workflow as an agent that asks for approval before calling the weather tool.",
 			"After approval, the workflow should resume and report the weather in Amsterdam (cloudy with a high of 15°C).",
