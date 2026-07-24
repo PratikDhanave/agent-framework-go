@@ -306,6 +306,17 @@ func TestMemoryProviderEnsureMemoryStoreCreated(t *testing.T) {
 			wantPaths: []string{"/memory_stores/memory", "/memory_stores"},
 		},
 		{
+			name:        "concurrent create conflict is treated as no-op",
+			description: &description,
+			handle: func(req *http.Request, _ string) (*http.Response, error) {
+				if req.Method == http.MethodGet {
+					return jsonResponse(req, http.StatusNotFound, `{"error":{"code":"NotFound"}}`), nil
+				}
+				return jsonResponse(req, http.StatusConflict, `{"error":{"code":"Conflict"}}`), nil
+			},
+			wantPaths: []string{"/memory_stores/memory", "/memory_stores"},
+		},
+		{
 			name: "non-404 error is propagated",
 			handle: func(req *http.Request, _ string) (*http.Response, error) {
 				return jsonResponse(req, http.StatusInternalServerError, `{"error":{"code":"Boom"}}`), nil
