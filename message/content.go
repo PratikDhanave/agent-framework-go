@@ -235,6 +235,7 @@ func (t *DataContent) Bytes() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(t.Data)
 }
 
+// TopLevelMediaType returns the top-level part of the content's MediaType - the portion before the / (for example image for image/png), or an empty string if MediaType is unset.
 func (t *DataContent) TopLevelMediaType() string {
 	return topLevelMediaType(t.MediaType)
 }
@@ -425,6 +426,7 @@ type HostedFileContent struct {
 	MediaType string `json:",omitempty"`
 }
 
+// TopLevelMediaType returns the top-level part of the content's MediaType - the portion before the / (for example image for image/png), or an empty string if MediaType is unset.
 func (t *HostedFileContent) TopLevelMediaType() string {
 	return topLevelMediaType(t.MediaType)
 }
@@ -545,6 +547,7 @@ func NewURIContent(uri string, mediaType string) (*URIContent, error) {
 	return &URIContent{URI: uri, MediaType: mediaType}, nil
 }
 
+// TopLevelMediaType returns the top-level part of the content's MediaType - the portion before the / (for example image for image/png), or an empty string if MediaType is unset.
 func (t *URIContent) TopLevelMediaType() string {
 	return topLevelMediaType(t.MediaType)
 }
