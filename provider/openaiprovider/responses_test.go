@@ -1125,6 +1125,8 @@ func TestResponsesReasoningEncryptedContent_Streaming(t *testing.T) {
 
 	const input = `
             {
+              "store":false,
+              "include":["reasoning.encrypted_content"],
               "input":[{
                 "type":"message",
                 "role":"user",
@@ -1179,7 +1181,8 @@ data: {"type":"response.completed","sequence_number":10,"response":{"id":"resp_e
 	a := newTestResponsesClient(server, "o4-mini")
 
 	var updates []*agent.ResponseUpdate
-	for update, err := range a.RunText(t.Context(), "Solve this problem step by step.", agent.Stream(true)) {
+	for update, err := range a.RunText(t.Context(), "Solve this problem step by step.", agent.Stream(true),
+		openaiprovider.ResponsesNewParams(responses.ResponseNewParams{Store: openai.Bool(false)})) {
 		if err != nil {
 			t.Fatalf("error = %v", err)
 		}
