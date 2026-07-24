@@ -58,7 +58,7 @@ func main() {
 
 	resp, err := a.RunText(context.Background(), "How do I create an Azure storage account using the az CLI?").Collect()
 	demo.Response(resp, err)
-	if resp == nil {
+	if err != nil || resp == nil {
 		return
 	}
 
